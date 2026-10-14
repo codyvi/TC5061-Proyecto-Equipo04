@@ -2,6 +2,8 @@
 /data/**
 !/data/**/
 !/data/**/.gitkeep
+# El manifiesto de datos (hashes y conteos) sí se versiona en Git
+!/data/manifest.json
 
 # Modelos y figuras generadas por el pipeline
 /models/*

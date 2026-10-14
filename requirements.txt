@@ -1,3 +1,4 @@
+# Plantilla CCDS
 loguru
 mkdocs
 pip
@@ -5,4 +6,24 @@ python-dotenv
 ruff
 tqdm
 typer
+
+# Datos (notebook de preparación; pyarrow para leer/escribir Parquet)
+numpy
+pandas>=2.0
+pyarrow
+
+# Modelado y seguimiento de experimentos
+scikit-learn
+mlflow
+
+# Notebooks y visualización
+ipykernel
+jupyter
+matplotlib
+seaborn
+scipy
+
+# Pruebas
+pytest
+
 -e .

@@ -1,0 +1,118 @@
+{
+  "data_version": "bd6802fef84e",
+  "generado": "2026-10-14T21:39:43+00:00",
+  "fuente": "https://www.mibici.net/es/datos-abiertos/",
+  "parametros_limpieza": {
+    "duracion_min": 1,
+    "duracion_max": 180,
+    "meses": [
+      "2026_01",
+      "2026_02",
+      "2026_03",
+      "2026_04",
+      "2026_05",
+      "2026_06"
+    ]
+  },
+  "raw": [
+    {
+      "archivo": "datos_abiertos_2026_01.csv",
+      "bytes": 30985189,
+      "registros": 357180,
+      "sha256": "c40d7a43eb1c0b1523d6267bcdfac1daad04179ef1f0a7cf93f09b2df82285c2",
+      "codificacion": "latin-1"
+    },
+    {
+      "archivo": "datos_abiertos_2026_02.csv",
+      "bytes": 28953901,
+      "registros": 333756,
+      "sha256": "2d78fa9686477bdedbf333423e6aadc63b265aaef038eb0b09701746a155ae1f",
+      "codificacion": "utf-8"
+    },
+    {
+      "archivo": "datos_abiertos_2026_03.csv",
+      "bytes": 32640591,
+      "registros": 376243,
+      "sha256": "97c273aa7465c99d509dfc58436122a979ad51af00bd527cef6144210375d16e",
+      "codificacion": "utf-8"
+    },
+    {
+      "archivo": "datos_abiertos_2026_04.csv",
+      "bytes": 30523683,
+      "registros": 351851,
+      "sha256": "9165342d0169f2c0ba4fb2c944003147c8a95d77f9058361b451cadf141b2483",
+      "codificacion": "utf-8"
+    },
+    {
+      "archivo": "datos_abiertos_2026_05.csv",
+      "bytes": 27427394,
+      "registros": 315895,
+      "sha256": "d0ac16ae3a75b8ac40565176e2e607c99c756a385860caa7e2ffb351082c9d45",
+      "codificacion": "utf-8"
+    },
+    {
+      "archivo": "datos_abiertos_2026_06.csv",
+      "bytes": 30826027,
+      "registros": 355303,
+      "sha256": "a4d195786a3599b155829288a0432cd9e76c6780dc693c0e9579d11e11c49a27",
+      "codificacion": "utf-8"
+    },
+    {
+      "archivo": "nomenclatura_2026_09.csv",
+      "bytes": 40841,
+      "registros": 484,
+      "sha256": "206e45fe633922b634d858142fa21e6fd9f4c421b6435c02980ef290cc2df90d",
+      "codificacion": "utf-8"
+    }
+  ],
+  "interim": [
+    {
+      "archivo": "viajes_2026_01.parquet",
+      "bytes": 7413448,
+      "registros": 357180,
+      "sha256": "ad2c4f25ba3c39466cf12047fce9be0a83f7bb4f9116390527a8df131d417444"
+    },
+    {
+      "archivo": "viajes_2026_02.parquet",
+      "bytes": 6986231,
+      "registros": 333756,
+      "sha256": "210637b330bb6792cc2811d74d0eef2aa6d8633102eeb4052bcfe5ee66acd875"
+    },
+    {
+      "archivo": "viajes_2026_03.parquet",
+      "bytes": 7741597,
+      "registros": 376243,
+      "sha256": "552b475dcaeba64a4179eb9ba5f29f8a6ad6da25eb57233a379d5bf3c9e0bdb2"
+    },
+    {
+      "archivo": "viajes_2026_04.parquet",
+      "bytes": 7331496,
+      "registros": 351851,
+      "sha256": "a26eacbc49673cdf7036f112c0773f3412d493f617db76377414f51c60a00ede"
+    },
+    {
+      "archivo": "viajes_2026_05.parquet",
+      "bytes": 6746594,
+      "registros": 315895,
+      "sha256": "53aa75049179e0f6a1cd6c29a3d45bed57597b1baae83a2c8a5d81cfc3a73364"
+    },
+    {
+      "archivo": "viajes_2026_06.parquet",
+      "bytes": 7398189,
+      "registros": 355303,
+      "sha256": "7f67a42c785d6d1de6db4c04b6da1c5e50a37848f11a5893ba4ac3e965e016d7"
+    },
+    {
+      "archivo": "nomenclatura.parquet",
+      "bytes": 26782,
+      "registros": 484,
+      "sha256": "d421316ca3792be1eedfe3ad9fcb469a951e9114c36765040e34289e65bd0b59"
+    },
+    {
+      "archivo": "viajes_limpios.parquet",
+      "bytes": 37821325,
+      "registros": 2012763,
+      "sha256": "6dba4405de4c21d1bb2cc8ca9a640cbdb5730089dd9e499f8c920f45f55eaa81"
+    }
+  ]
+}
