@@ -26,7 +26,8 @@ from mibici_mlops_module.config import (
     INTERIM_DATA_DIR,
     MANIFEST_PATH,
     MESES,
-    MLFLOW_EXPERIMENT,
+    EQUIPO,
+    MLFLOW_EXPERIMENT_EQUIPO,
     MLFLOW_TRACKING_URI,
     PORTAL_URL,
     RAW_DATA_DIR,
@@ -299,10 +300,12 @@ def registrar_en_mlflow(manifest: dict, resumen: dict | None = None) -> None:
     import mlflow
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+    mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
     activa = mlflow.active_run() is not None
     with mlflow.start_run(run_name=f"datos-{manifest['data_version']}", nested=activa):
-        mlflow.set_tags({"etapa": "ingesta", "data_version": manifest["data_version"]})
+        mlflow.set_tags(
+            {"equipo": EQUIPO, "etapa": "ingesta", "data_version": manifest["data_version"]}
+        )
         mlflow.log_params(
             {
                 "data_version": manifest["data_version"],
