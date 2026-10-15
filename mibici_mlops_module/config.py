@@ -28,7 +28,8 @@ MESES = [f"2026_{m:02d}" for m in range(1, 7)]  # meses a ingerir (AAAA_MM)
 # Versionado de datos y seguimiento
 MANIFEST_PATH = DATA_DIR / "manifest.json"
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", f"sqlite:///{PROJ_ROOT / 'mlflow.db'}")
-MLFLOW_EXPERIMENT = "mibici"
+EQUIPO = "equipo04"
+MLFLOW_EXPERIMENT_EQUIPO = f"mibici-{EQUIPO}"  # experimento único: datos, entrenamiento y evaluación
 
 INICIO = pd.Timestamp("2026-01-01 00:00")
 FIN = pd.Timestamp("2026-06-30 23:00")
@@ -42,6 +43,7 @@ FESTIVOS = pd.to_datetime(["2026-01-01", "2026-02-02", "2026-03-16", "2026-05-01
 SEMANA_SANTA = pd.date_range("2026-03-30", "2026-04-10")
 
 MODELS_DIR = PROJ_ROOT / "models"
+HIPERPARAMETROS_PATH = PROJ_ROOT / "configs" / "hiperparametros.yaml"
 
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"

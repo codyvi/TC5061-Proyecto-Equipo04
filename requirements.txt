@@ -15,6 +15,7 @@ pyarrow
 # Modelado y seguimiento de experimentos
 scikit-learn
 mlflow
+pyyaml
 
 # Notebooks y visualización
 ipykernel

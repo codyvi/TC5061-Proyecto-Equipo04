@@ -31,9 +31,11 @@ Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering
 │   └── manifest.json  <- Versionado de datos (sha256, tamaño, registros y data_version);
 │                         único archivo de data/ que se sube a Git.
 │
+├── configs            <- Hiperparámetros de los modelos (hiperparametros.yaml)
+│
 ├── docs               <- A default mkdocs project; see www.mkdocs.org for details
 │
-├── models             <- Trained and serialized models, model predictions, or model summaries
+├── models             <- Modelos entrenados (p1.joblib, p2.joblib, p3.joblib; no se versionan)
 │
 ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
 │                         the creator's initials, and a short `-` delimited description, e.g.
@@ -63,10 +65,12 @@ Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering
     │
     ├── features.py             <- Code to create features for modeling
     │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
+    ├── modeling
+    │   ├── __init__.py
+    │   ├── estimadores.py      <- Baselines propios y guardado/carga de modelos (joblib)
+    │   ├── pipeline.py         <- Entrena y evalúa de punta a punta, registrando ambos en MLflow
+    │   ├── predict.py          <- Predictores OOP (P1Predictor, P2Predictor, P3Predictor)
+    │   └── train.py            <- Entrenadores OOP (P1Trainer, P2Trainer, P3Trainer) con MLflow
     │
     └── plots.py                <- Code to create visualizations
 ```
@@ -119,8 +123,69 @@ Opciones útiles de `dataset`: `--meses 2026_01 --meses 2026_02` (otros meses), 
 | Normalizado | `data/interim/` | Parquet por mes, `nomenclatura.parquet` y `viajes_limpios.parquet`, con columnas en snake_case y fechas como `datetime` |
 | Modelado | `data/processed/` | `p1_demanda`, `p2_riesgo`, `p3_perfiles` y `resumen.json` |
 
-**Versionado de los datos.** `data/manifest.json` guarda, por cada archivo, su `sha256`, tamaño y número de registros, y una `data_version` (hash de los CSV crudos y de los parámetros de limpieza). Es el único archivo de `data/` que se sube a Git: si cambia un CSV, cambia la versión. Con `--mlflow` la versión queda como parámetro de una corrida en el experimento `mibici`; en el entrenamiento se puede leer con `cargar_manifest()["data_version"]`.
+**Versionado de los datos.** `data/manifest.json` guarda, por cada archivo, su `sha256`, tamaño y número de registros, y una `data_version` (hash de los CSV crudos y de los parámetros de limpieza). Es el único archivo de `data/` que se sube a Git: si cambia un CSV, cambia la versión. Con `--mlflow` la versión queda como parámetro de una corrida en el experimento `mibici-equipo04`; en el entrenamiento se puede leer con `cargar_manifest()["data_version"]`.
 
 El resto de `data/` está en `.gitignore`: los datos no se redistribuyen y se usan solo con fines académicos, citando la fuente. Después de generar las tablas, abre `notebooks/1.0-dcm-eda-mibici.ipynb` para el análisis exploratorio.
 
---------
+## Ejecución de principio a fin
+
+Pasos para reproducir todo desde cero, hasta ver los resultados en MLflow. Se ejecutan desde la raíz del repositorio en WSL/Linux.
+
+```bash
+# 1. Entorno virtual e instalación (ver "Entorno virtual" arriba)
+python3 -m venv mibici
+source mibici/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+
+# 2. Datos: descarga los CSV, los limpia, genera data/manifest.json y registra la versión en MLflow
+python -m mibici_mlops_module.dataset --mlflow
+
+# 3. Variables: construye las tablas P1, P2 y P3 en data/processed/
+python -m mibici_mlops_module.features
+
+# 4. Entrenamiento + evaluación de P1, P2 y P3 (registra todo en MLflow)
+python -m mibici_mlops_module.modeling.pipeline
+
+# 5. Ver los resultados
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+Después abre <http://127.0.0.1:5000> y entra al experimento **mibici-equipo04**.
+
+Notas:
+
+- El paso 4 entrena 29 modelos (5 combinaciones de hiperparámetros por modelo, más los baselines) y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
+- Conviene hacer `git commit` antes del paso 4: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
+- Corre `mlflow ui` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
+
+**Qué queda en MLflow** (experimento `mibici-equipo04`):
+
+- Un run de datos, `datos-<data_version>` (etapa `ingesta`), con la versión de los datos, los meses, los criterios de limpieza, los conteos y `manifest.json`.
+- Un run por candidato, con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k4`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, hiperparámetros), métricas, figuras, el modelo con su firma y las etiquetas `equipo`, `pregunta`, `git_commit` y `git_dirty`.
+- Un run de evaluación por pregunta (`P1-demanda-evaluacion-<modelo>`): carga el mejor modelo desde `models/` con el predictor y registra sus métricas en validación y prueba, las figuras y `max_dif_vs_entrenamiento` (debe ser 0: el modelo guardado reproduce lo entrenado).
+- El mejor candidato de cada pregunta, según la validación, queda en `models/pX.joblib`.
+
+## Scripts disponibles
+
+Todos se ejecutan como módulo (`python -m ...`) y aceptan `--help`.
+
+| Script | Para qué sirve | Ejemplo |
+| --- | --- | --- |
+| `mibici_mlops_module.dataset` | Descarga, normaliza, limpia y versiona los datos (`data/manifest.json`). Opciones: `--meses`, `--no-descargar`, `--force`, `--mlflow` (registra la versión en el experimento `mibici-equipo04`). | `python -m mibici_mlops_module.dataset --mlflow` |
+| `mibici_mlops_module.features` | Construye `p1_demanda`, `p2_riesgo`, `p3_perfiles` y `resumen.json`, y valida que no haya fuga de información. | `python -m mibici_mlops_module.features` |
+| `mibici_mlops_module.modeling.pipeline` | Entrena y evalúa de punta a punta, registrando ambos pasos en MLflow. **Es el recomendado.** | `python -m mibici_mlops_module.modeling.pipeline --pregunta p1` |
+| `mibici_mlops_module.modeling.train` | Solo entrena (un run por candidato) y guarda el mejor en `models/`. | `python -m mibici_mlops_module.modeling.train --pregunta p2` |
+| `mibici_mlops_module.modeling.predict` | Genera predicciones con el modelo guardado y las escribe en `data/processed/pX_predicciones.parquet`. | `python -m mibici_mlops_module.modeling.predict --pregunta p1 --conjunto prueba` |
+| `pytest` (carpeta `tests/`) | Pruebas automáticas de `features.py`: rezagos y medias móviles sin fuga del futuro, objetivos en t+1, clases de riesgo según el umbral, partición temporal y validación con muestras pequeñas. No necesitan los datos reales. | `python -m pytest -q` |
+
+Opciones de `pipeline` y `train`:
+
+- `--pregunta p1|p2|p3|todas` (por defecto `todas`).
+- `--fraccion 0.1`: usa solo esa fracción del entrenamiento (pruebas rápidas).
+- `--seed 42`: semilla de los modelos.
+- `--config ruta.yaml`: hiperparámetros alternativos (por defecto `configs/hiperparametros.yaml`).
+
+Opciones de `predict`: `--pregunta`, `--conjunto entrenamiento|validacion|prueba` (P1 y P2), `--entrada` y `--salida` (rutas Parquet).
+
+**Hiperparámetros.** `configs/hiperparametros.yaml` define las combinaciones de cada modelo. Cada elemento de la lista es un run; el campo opcional `nombre` forma parte del nombre del run (`P1-demanda-random-forest-<nombre>`) y, si se omite, se arma con los hiperparámetros. Agrega o quita combinaciones y vuelve a correr.
