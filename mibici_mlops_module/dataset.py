@@ -32,6 +32,7 @@ from mibici_mlops_module.config import (
     PORTAL_URL,
     RAW_DATA_DIR,
 )
+from mibici_mlops_module.utils import info_git
 
 app = typer.Typer()
 
@@ -323,7 +324,12 @@ def registrar_en_mlflow(manifest: dict, resumen: dict | None = None) -> None:
     activa = mlflow.active_run() is not None
     with mlflow.start_run(run_name=f"datos-{manifest['data_version']}", nested=activa):
         mlflow.set_tags(
-            {"equipo": EQUIPO, "etapa": "ingesta", "data_version": manifest["data_version"]}
+            {
+                "equipo": EQUIPO,
+                "etapa": "ingesta",
+                "data_version": manifest["data_version"],
+                **info_git(),
+            }
         )
         mlflow.log_params(
             {

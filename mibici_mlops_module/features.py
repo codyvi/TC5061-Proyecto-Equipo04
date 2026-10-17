@@ -24,6 +24,7 @@ from mibici_mlops_module.config import (
     INICIO,
     INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
+    SEED,
     SEMANA_SANTA,
     U_RIESGO,
 )
@@ -330,7 +331,7 @@ def validar_sin_fuga(viajes: pd.DataFrame, p1: pd.DataFrame, n: int = 2000) -> N
     """
     conteo = viajes.groupby([viajes["origen_id"], viajes["inicio_viaje"].dt.floor("h")]).size()
     salidas_en = lambda e, h: conteo.get((e, h), 0)
-    muestra = p1.sample(min(n, len(p1)), random_state=0)
+    muestra = p1.sample(min(n, len(p1)), random_state=SEED)
     H = pd.Timedelta(hours=1)
     assert all(
         salidas_en(e, h + H) == y
