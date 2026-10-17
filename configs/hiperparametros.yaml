@@ -8,35 +8,26 @@
 p1:
   random-forest:
     - {nombre: base, n_estimators: 100, max_depth: 14, min_samples_leaf: 20, max_samples: 0.3}
-    - {nombre: poco-profundo, n_estimators: 150, max_depth: 10, min_samples_leaf: 50, max_samples: 0.3}
-    - {nombre: profundo-hojas-chicas, n_estimators: 150, max_depth: 18, min_samples_leaf: 10, max_samples: 0.2}
     - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
     - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
   hist-gradient-boosting-poisson:
     - {nombre: base, learning_rate: 0.10, max_iter: 300, max_leaf_nodes: 63, l2_regularization: 0.0}
-    - {nombre: lento-lr0.05, learning_rate: 0.05, max_iter: 500, max_leaf_nodes: 31, l2_regularization: 0.0}
-    - {nombre: hojas-127-l2, learning_rate: 0.10, max_iter: 300, max_leaf_nodes: 127, l2_regularization: 1.0}
-    - {nombre: muy-lento-lr0.03, learning_rate: 0.03, max_iter: 800, max_leaf_nodes: 63, l2_regularization: 0.5}
-    - {nombre: rapido-lr0.20, learning_rate: 0.20, max_iter: 200, max_leaf_nodes: 31, l2_regularization: 0.0}
+    - {nombre: lento-lr0.05, learning_rate: 0.05, max_iter: 500, max_leaf_nodes: 31, l2_regularization: 0.2}
+
 
 p2:
   arbol-balanceado:
     - {nombre: base, max_depth: 10, min_samples_leaf: 50}
     - {nombre: simple, max_depth: 6, min_samples_leaf: 100}
-    - {nombre: profundo, max_depth: 14, min_samples_leaf: 30}
-    - {nombre: conservador, max_depth: 8, min_samples_leaf: 200}
     - {nombre: muy-profundo, max_depth: 20, min_samples_leaf: 20}
   random-forest-class-weight:
     - {nombre: base, n_estimators: 100, max_depth: 14, min_samples_leaf: 20, max_samples: 0.3}
-    - {nombre: poco-profundo, n_estimators: 150, max_depth: 10, min_samples_leaf: 50, max_samples: 0.3}
-    - {nombre: profundo-hojas-chicas, n_estimators: 150, max_depth: 18, min_samples_leaf: 10, max_samples: 0.2}
     - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
     - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
 
 p3:
   kmeans:
-    - {nombre: k2, k: 2, n_init: 10}
     - {nombre: k3, k: 3, n_init: 10}
-    - {nombre: k4, k: 4, n_init: 10}
-    - {nombre: k6, k: 6, n_init: 10}
-    - {nombre: k8, k: 8, n_init: 10}
+    - {nombre: k4, k: 5, n_init: 10}
+    - {nombre: k6, k: 7, n_init: 10}
+    
