@@ -14,7 +14,6 @@ pregunta según la validación (nunca la prueba).
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-import subprocess
 from typing import Annotated
 
 from loguru import logger
@@ -63,6 +62,7 @@ from mibici_mlops_module.config import (
     MLFLOW_TRACKING_URI,
     PROCESSED_DATA_DIR,
     PROJ_ROOT,
+    SEED,
     U_RIESGO,
 )
 from mibici_mlops_module.dataset import cargar_manifest
@@ -79,26 +79,11 @@ from mibici_mlops_module.modeling.baseline import (
     ModeloGuardado,
     guardar_modelo,
 )
+from mibici_mlops_module.utils import info_git
 
 app = typer.Typer()
 
 CLASES_P2 = ["vaciado", "normal", "saturacion"]
-
-
-def info_git() -> dict[str, str]:
-    """Devuelve el commit de Git y si hay cambios sin confirmar.
-
-    Por qué: un run solo se puede reproducir si se sabe con qué código corrió. `git_dirty=true`
-    avisa que el commit por sí solo no basta para reproducirlo.
-    """
-
-    def git(*args: str) -> str:
-        """Ejecuta `git <args>` en la raíz del repositorio y devuelve su salida (vacía si falla)."""
-        return subprocess.run(
-            ["git", *args], cwd=PROJ_ROOT, capture_output=True, text=True, check=False
-        ).stdout.strip()
-
-    return {"git_commit": git("rev-parse", "HEAD") or "desconocido", "git_dirty": str(bool(git("status", "--porcelain"))).lower()}
 
 
 def cargar_hiperparametros(ruta: Path = HIPERPARAMETROS_PATH) -> dict:
@@ -166,7 +151,7 @@ class BaseTrainer(ABC):
     def __init__(
         self,
         fraccion: float = 1.0,
-        seed: int = 42,
+        seed: int = SEED,
         tabla_path: Path | None = None,
         config_path: Path = HIPERPARAMETROS_PATH,
     ):
@@ -603,7 +588,7 @@ class P3Trainer(BaseTrainer):
     pregunta = "p3"
     tarea = "tipologia"
     features = FEATURES_P3
-    criterio = "silhouette"
+    criterio = "entrenamiento_silhouette"
 
     def cargar(self) -> None:
         """Lee los perfiles de estación, sus coordenadas y las variables escaladas.
@@ -667,15 +652,15 @@ class P3Trainer(BaseTrainer):
         Calinski-Harabasz (mayor es mejor) lo confirman; la inercia alimenta el codo.
         """
         n_grupos = len(np.unique(self.etiquetas))
-        metricas = {"n_grupos": float(n_grupos)}
+        metricas = {"entrenamiento_n_grupos": float(n_grupos)}
         if n_grupos >= 2:
             metricas |= {
-                "silhouette": float(silhouette_score(self.X_escalado, self.etiquetas)),
-                "davies_bouldin": float(davies_bouldin_score(self.X_escalado, self.etiquetas)),
-                "calinski_harabasz": float(calinski_harabasz_score(self.X_escalado, self.etiquetas)),
+                "entrenamiento_silhouette": float(silhouette_score(self.X_escalado, self.etiquetas)),
+                "entrenamiento_davies_bouldin": float(davies_bouldin_score(self.X_escalado, self.etiquetas)),
+                "entrenamiento_calinski_harabasz": float(calinski_harabasz_score(self.X_escalado, self.etiquetas)),
             }
         if hasattr(modelo, "steps"):
-            metricas["inertia"] = float(modelo[-1].inertia_)
+            metricas["entrenamiento_inertia"] = float(modelo[-1].inertia_)
         return metricas
 
     def evaluar(self, c: Candidato) -> dict[str, float]:
@@ -711,9 +696,9 @@ class P3Trainer(BaseTrainer):
         km = [r for r in resultados if not r["candidato"].baseline]
         ks = [r["candidato"].params["k"] for r in km]
         fig, axs = plt.subplots(1, 2, figsize=(10, 4))
-        axs[0].plot(ks, [r["metricas"]["inertia"] for r in km], "o-")
+        axs[0].plot(ks, [r["metricas"]["entrenamiento_inertia"] for r in km], "o-")
         axs[0].set(title="Codo", xlabel="k", ylabel="inercia")
-        axs[1].plot(ks, [r["metricas"]["silhouette"] for r in km], "o-")
+        axs[1].plot(ks, [r["metricas"]["entrenamiento_silhouette"] for r in km], "o-")
         axs[1].set(title="Silhouette", xlabel="k")
         fig.tight_layout()
         modelo = self.mejor["candidato"].modelo
@@ -731,7 +716,7 @@ ENTRENADORES = {"p1": P1Trainer, "p2": P2Trainer, "p3": P3Trainer}
 def main(
     pregunta: Annotated[str, typer.Option(help="p1, p2, p3 o todas")] = "todas",
     fraccion: Annotated[float, typer.Option(help="Fracción del entrenamiento (pruebas rápidas)")] = 1.0,
-    seed: int = 42,
+    seed: int = SEED,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
 ):
     """Entrena una pregunta (p1, p2 o p3) o todas, y registra los runs en MLflow."""

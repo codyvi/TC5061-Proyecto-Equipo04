@@ -1,5 +1,3 @@
-# mibici_mlops_equipo04
-
 <div align="center">
 
 **MLOps Team 04 - MiBici**
@@ -13,57 +11,64 @@
 
 Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering de estaciones con MLflow.
 
-## Project Organization
+## ML Canvas y arquitectura
+
+- [ML Canvas](references/ml_canvas_mibici.png)
+- [Diagrama de arquitectura](references/arquitectura_mibici.png)
+
+## Organización del proyecto
 
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
+├── LICENSE            <- Licencia de código abierto
+├── Makefile           <- Comandos de conveniencia, como `make data` o `make train`
+├── README.md          <- README principal para quien use este proyecto
 ├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed (viajes_2026_01..06.parquet,
+│   ├── external       <- Datos de fuentes externas
+│   ├── interim        <- Datos intermedios ya transformados (viajes_2026_01..06.parquet,
 │   │                     nomenclatura.parquet, viajes_limpios.parquet
 │   │                     y resumen_limpieza.json).
-│   ├── processed      <- The final, canonical data sets for modeling (p1_demanda.parquet,
+│   ├── processed      <- Conjuntos finales para modelar (p1_demanda.parquet,
 │   │                     p2_riesgo.parquet, p3_perfiles.parquet y resumen.json).
-│   ├── raw            <- The original, immutable data dump (datos_abiertos_2026_01..06.csv y
+│   ├── raw            <- Datos originales e inmutables (datos_abiertos_2026_01..06.csv y
 │   │                     nomenclatura_2026_09.csv de MiBici).
 │   └── manifest.json  <- Versionado de datos (sha256, tamaño, registros y data_version);
 │                         único archivo de data/ que se sube a Git.
 │
 ├── configs            <- Hiperparámetros de los modelos (hiperparametros.yaml)
 │
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
+├── docs               <- Proyecto mkdocs por defecto; ver www.mkdocs.org
 │
 ├── models             <- Modelos entrenados (p1.joblib, p2.joblib, p3.joblib; no se versionan)
 │
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
+├── notebooks          <- Jupyter notebooks. Convención de nombre: un número (para ordenar),
+│                         las iniciales de quien lo crea y una descripción corta separada
+│                         por `-`, p. ej. `1.0-jqp-exploracion-inicial`.
 │   └── 1.0-dcm-eda-mibici.ipynb  <- EDA de viajes, P1, P2 y P3
 │
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         mibici_mlops_module and configuration for tools like black
+├── pyproject.toml     <- Metadatos del paquete mibici_mlops_module y
+│                         configuración de herramientas como ruff
 │
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
+├── references         <- Material explicativo del proyecto.
+│   ├── ml_canvas_mibici.png     <- ML Canvas
+│   └── arquitectura_mibici.png  <- Diagrama de arquitectura
 │
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
+├── reports            <- Análisis generados en HTML, PDF, LaTeX, etc.
+│   └── figures        <- Gráficas y figuras generadas para los reportes
 │
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
+├── requirements.txt   <- Dependencias con versión fija para reproducir el entorno
+│                         (generado con `pip freeze`)
 │
 ├── tests              <- Pruebas automatizadas (pytest)
 │
-└── mibici_mlops_module   <- Source code for use in this project.
+└── mibici_mlops_module   <- Código fuente del proyecto
     │
-    ├── __init__.py             <- Makes mibici_mlops_module a Python module
+    ├── __init__.py             <- Convierte mibici_mlops_module en un módulo de Python
     │
-    ├── config.py               <- Store useful variables and configuration
+    ├── config.py               <- Variables y configuración central
     │
-    ├── dataset.py              <- Scripts to download or generate data
+    ├── dataset.py              <- Scripts para descargar o generar los datos
     │
-    ├── features.py             <- Code to create features for modeling
+    ├── features.py             <- Código para crear las variables del modelado
     │
     ├── modeling
     │   ├── __init__.py
@@ -72,7 +77,9 @@ Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering
     │   ├── predict.py          <- Predictores OOP (P1Predictor, P2Predictor, P3Predictor)
     │   └── train.py            <- Entrenadores OOP (P1Trainer, P2Trainer, P3Trainer) con MLflow
     │
-    └── plots.py                <- Code to create visualizations
+    ├── plots.py                <- Código para crear visualizaciones
+    │
+    └── utils.py                <- Utilidades compartidas (commit de Git para las etiquetas de MLflow)
 ```
 
 ## Entorno virtual
@@ -132,22 +139,28 @@ El resto de `data/` está en `.gitignore`: los datos no se redistribuyen y se us
 Pasos para reproducir todo desde cero, hasta ver los resultados en MLflow. Se ejecutan desde la raíz del repositorio en WSL/Linux.
 
 ```bash
-# 1. Entorno virtual e instalación (ver "Entorno virtual" arriba)
+# 1. Clonar el repositorio y entrar a la carpeta
+git clone <url-del-repositorio>
+cd TC5061-Proyecto-Equipo04
+
+# 2. Crear entorno virtual y activarlo
 python3 -m venv mibici
 source mibici/bin/activate
+
+# 3. Instalar dependencias
 pip install -U pip
 pip install -r requirements.txt
 
-# 2. Datos: descarga los CSV, los limpia, genera data/manifest.json y registra la versión en MLflow
+# 4. Datos: descarga los CSV, los limpia, genera data/manifest.json y registra la versión en MLflow
 python -m mibici_mlops_module.dataset --mlflow
 
-# 3. Variables: construye las tablas P1, P2 y P3 en data/processed/
+# 5. Variables: construye las tablas P1, P2 y P3 en data/processed/
 python -m mibici_mlops_module.features
 
-# 4. Entrenamiento + evaluación de P1, P2 y P3 (registra todo en MLflow)
+# 6. Entrenamiento + evaluación de P1, P2 y P3 (registra todo en MLflow)
 python -m mibici_mlops_module.modeling.pipeline
 
-# 5. Ver los resultados
+# 7. Ver los resultados
 mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
@@ -155,16 +168,27 @@ Después abre <http://127.0.0.1:5000> y entra al experimento **mibici-equipo04**
 
 Notas:
 
-- El paso 4 registra 9 runs con la configuración actual (una combinación por modelo, más los baselines): 4 de P1, 3 de P2 y 2 de P3. Para probar más combinaciones, quita el `#` a las que están comentadas en `configs/hiperparametros.yaml`; con todas son más de 20 runs y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
+- El paso 6 registra 9 runs con la configuración actual (una combinación por modelo, más los baselines): 4 de P1, 3 de P2 y 2 de P3. Para probar más combinaciones, quita el `#` a las que están comentadas en `configs/hiperparametros.yaml`; con todas son más de 20 runs y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
 - Conviene hacer `git commit` antes del paso 4: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Corre `mlflow ui` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
 
 **Qué queda en MLflow** (experimento `mibici-equipo04`):
 
-- Un run de datos, `datos-<data_version>` (etapa `ingesta`), con la versión de los datos, los meses, los criterios de limpieza, los conteos y `manifest.json`.
+- Un run de datos, `datos-<data_version>` (etapa `ingesta`), con la versión de los datos, el commit de Git, los meses, los criterios de limpieza, los conteos y `manifest.json`.
 - Un run por candidato, con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k4`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, hiperparámetros), métricas, figuras, el modelo con su firma y las etiquetas `equipo`, `pregunta`, `git_commit` y `git_dirty`.
 - Un run de evaluación por pregunta (`P1-demanda-evaluacion-<modelo>`): carga el mejor modelo desde `models/` con el predictor y registra sus métricas en validación y prueba, las figuras y `max_dif_vs_entrenamiento` (debe ser 0: el modelo guardado reproduce lo entrenado).
 - El mejor candidato de cada pregunta, según la validación, queda en `models/pX.joblib`.
+
+## Flujo de trabajo con Git y GitHub
+
+La rama `main` está protegida por un ruleset de GitHub: nadie sube directo, no se permite reescribir su historial ni borrarla, y todo cambio entra por *Pull Request* con al menos una aprobación. El único método de integración permitido es **rebase**, por lo que el historial de `main` es lineal.
+
+1. **Actualizar `main`:** `git switch main && git pull`.
+2. **Crear una rama** por cambio, con prefijo según el tipo: `feat/<tema>` (funcionalidad), `fix/<tema>` (corrección) o `docs/<tema>` (documentación). Ejemplo: `git switch -c feat/refactor`.
+3. **Commits** con el formato `tipo(alcance): descripción en español`, donde el tipo es `feat`, `fix`, `docs`, `test` o `refactor`. Ejemplo: `feat(modeling): entrenamiento y evaluación de P1, P2 y P3 con MLflow`.
+4. **Antes de abrir el PR:** `python -m pytest -q` y `ruff check`. No se suben datos, modelos, `mlflow.db`, `mlruns/` ni `.env`: ya están en `.gitignore`.
+5. **Abrir el Pull Request** hacia `main` con un resumen de qué cambia y por qué. Debe revisarlo y aprobarlo al menos otra persona del equipo; quien lo abre no lo aprueba.
+6. **Integrar con *Rebase and merge*** y borrar la rama.
 
 ## Scripts disponibles
 

@@ -31,6 +31,7 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", f"sqlite:///{PROJ_ROOT / 
 EQUIPO = "equipo04"
 MLFLOW_EXPERIMENT_EQUIPO = f"mibici-{EQUIPO}"  # experimento único: datos, entrenamiento y evaluación
 
+SEED = 42  # semilla única para muestreos y modelos
 INICIO = pd.Timestamp("2026-01-01 00:00")
 FIN = pd.Timestamp("2026-06-30 23:00")
 DUR_MIN, DUR_MAX = 1, 180  # duración válida de un viaje, en minutos

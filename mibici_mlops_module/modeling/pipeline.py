@@ -23,6 +23,7 @@ from mibici_mlops_module.config import (
     MLFLOW_EXPERIMENT_EQUIPO,
     MLFLOW_TRACKING_URI,
     PROJ_ROOT,
+    SEED,
 )
 from mibici_mlops_module.modeling.predict import PREDICTORES
 from mibici_mlops_module.modeling.train import ENTRENADORES, BaseTrainer
@@ -81,7 +82,7 @@ def evaluar_y_registrar(trainer: BaseTrainer) -> dict[str, float]:
 def main(
     pregunta: Annotated[str, typer.Option(help="p1, p2, p3 o todas")] = "todas",
     fraccion: Annotated[float, typer.Option(help="Fracción del entrenamiento (pruebas rápidas)")] = 1.0,
-    seed: int = 42,
+    seed: int = SEED,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
 ):
     """Entrena y evalúa una pregunta (p1, p2 o p3) o todas, registrando ambos pasos en MLflow."""
