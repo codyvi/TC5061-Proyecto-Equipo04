@@ -67,7 +67,7 @@ Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering
     │
     ├── modeling
     │   ├── __init__.py
-    │   ├── estimadores.py      <- Baselines propios y guardado/carga de modelos (joblib)
+    │   ├── baseline.py         <- Baselines propios y guardado/carga de modelos (joblib)
     │   ├── pipeline.py         <- Entrena y evalúa de punta a punta, registrando ambos en MLflow
     │   ├── predict.py          <- Predictores OOP (P1Predictor, P2Predictor, P3Predictor)
     │   └── train.py            <- Entrenadores OOP (P1Trainer, P2Trainer, P3Trainer) con MLflow
@@ -155,7 +155,7 @@ Después abre <http://127.0.0.1:5000> y entra al experimento **mibici-equipo04**
 
 Notas:
 
-- El paso 4 entrena 29 modelos (5 combinaciones de hiperparámetros por modelo, más los baselines) y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
+- El paso 4 registra 9 runs con la configuración actual (una combinación por modelo, más los baselines): 4 de P1, 3 de P2 y 2 de P3. Para probar más combinaciones, quita el `#` a las que están comentadas en `configs/hiperparametros.yaml`; con todas son más de 20 runs y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
 - Conviene hacer `git commit` antes del paso 4: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Corre `mlflow ui` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
 

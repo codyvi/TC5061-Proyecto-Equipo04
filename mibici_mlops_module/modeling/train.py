@@ -33,6 +33,7 @@ from sklearn.ensemble import (
     RandomForestClassifier,
     RandomForestRegressor,
 )
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     balanced_accuracy_score,
@@ -72,7 +73,7 @@ from mibici_mlops_module.features import (
     OBJETIVO_P1,
     OBJETIVO_P2,
 )
-from mibici_mlops_module.modeling.estimadores import (
+from mibici_mlops_module.modeling.baseline import (
     BaselineColumna,
     BaselineCuantiles,
     ModeloGuardado,
@@ -85,9 +86,14 @@ CLASES_P2 = ["vaciado", "normal", "saturacion"]
 
 
 def info_git() -> dict[str, str]:
-    """Commit con el que se ejecuta el run y si hay cambios sin confirmar."""
+    """Devuelve el commit de Git y si hay cambios sin confirmar.
+
+    Por qué: un run solo se puede reproducir si se sabe con qué código corrió. `git_dirty=true`
+    avisa que el commit por sí solo no basta para reproducirlo.
+    """
 
     def git(*args: str) -> str:
+        """Ejecuta `git <args>` en la raíz del repositorio y devuelve su salida (vacía si falla)."""
         return subprocess.run(
             ["git", *args], cwd=PROJ_ROOT, capture_output=True, text=True, check=False
         ).stdout.strip()
@@ -96,7 +102,11 @@ def info_git() -> dict[str, str]:
 
 
 def cargar_hiperparametros(ruta: Path = HIPERPARAMETROS_PATH) -> dict:
-    """Lee `configs/hiperparametros.yaml`: {pregunta: {modelo: [combinaciones]}}."""
+    """Lee `configs/hiperparametros.yaml`: {pregunta: {modelo: [combinaciones]}}.
+
+    Por qué: los hiperparámetros viven en un archivo y no en el código, así se prueban otras
+    combinaciones sin tocar `train.py` y el archivo usado queda registrado en cada run.
+    """
     return yaml.safe_load(ruta.read_text(encoding="utf-8"))
 
 
@@ -125,6 +135,11 @@ def nombre_y_params(hp: dict) -> tuple[str, dict]:
 
 @dataclass
 class Candidato:
+    """Un modelo por entrenar (o baseline) con el nombre de su run y sus hiperparámetros.
+
+    `baseline=True` marca los modelos de referencia: se evalúan igual que los demás, pero nunca se
+    guardan como el mejor. Sirven para saber cuánto aporta realmente un modelo más complejo.
+    """
     nombre: str
     modelo: object
     params: dict = field(default_factory=dict)
@@ -132,7 +147,15 @@ class Candidato:
 
 
 class BaseTrainer(ABC):
-    """Flujo común: un run de MLflow por candidato y guardado del mejor en `models/`."""
+    """Flujo común de entrenamiento: un run de MLflow por candidato y guardado del mejor.
+
+    Qué hace: carga los datos, recorre los candidatos, registra en cada run parámetros, métricas,
+    figuras, modelo y etiquetas, y guarda en `models/` el mejor según la validación.
+
+    Por qué es pertinente: P1, P2 y P3 comparten el procedimiento y solo cambian los datos, las
+    métricas y las figuras. Con una base común, los runs de las tres preguntas son comparables y
+    quedan registrados con los mismos campos (equipo, pregunta, commit, versión de datos).
+    """
 
     pregunta: str  # "p1", "p2" o "p3"
     tarea: str  # parte del nombre del run: demanda, riesgo o tipologia
@@ -147,6 +170,10 @@ class BaseTrainer(ABC):
         tabla_path: Path | None = None,
         config_path: Path = HIPERPARAMETROS_PATH,
     ):
+        """Lee los hiperparámetros de la pregunta, la versión de los datos y el commit de Git.
+
+        `fraccion` usa solo parte del entrenamiento (pruebas rápidas) y `seed` fija los modelos.
+        """
         self.config_path = config_path
         self.hp = cargar_hiperparametros(config_path)[self.pregunta]
         self.fraccion = fraccion
@@ -193,6 +220,13 @@ class BaseTrainer(ABC):
 
     # ---- flujo común ----------------------------------------------------------------
     def ejecutar(self) -> list[dict]:
+        """Entrena todos los candidatos, registra cada uno en MLflow y guarda el mejor.
+
+        Cada run lleva las etiquetas `equipo`, `pregunta` y `git_commit`, los parámetros que lo hacen
+        reproducible (fechas de las particiones, `data_version`, hiperparámetros, semilla), las
+        métricas, las figuras, el modelo con su firma y los archivos `manifest.json` y de
+        hiperparámetros. Devuelve, por candidato, sus métricas y el `run_id`.
+        """
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
         self.cargar()
@@ -247,7 +281,11 @@ class BaseTrainer(ABC):
         return resultados
 
     def guardar_mejor(self, resultados: list[dict]) -> Path:
-        """Elige por validación entre los no baseline y guarda el modelo en `models/`."""
+        """Elige por validación entre los no baseline y guarda el modelo en `models/`.
+
+        Por qué: elegir con la validación (y no con la prueba) evita que el conjunto de prueba influya
+        en la decisión; así las métricas de prueba siguen siendo una estimación honesta.
+        """
         elegibles = [r for r in resultados if not r["candidato"].baseline]
         signo = 1 if self.mayor_es_mejor else -1
         mejor = max(elegibles, key=lambda r: signo * r["metricas"][self.criterio])
@@ -268,12 +306,23 @@ class BaseTrainer(ABC):
 
 
 class SupervisadoTrainer(BaseTrainer):
-    """P1 y P2: tablas estación × hora con partición temporal entrenamiento/validación/prueba."""
+    """Base de P1 y P2: tablas estación × hora con partición temporal.
+
+    Por qué es pertinente: ambas preguntas predicen lo que ocurre en la hora siguiente (t+1), así que
+    entrenan con enero a abril, validan con mayo y prueban con junio. Una partición aleatoria
+    mezclaría futuro y pasado y daría métricas demasiado optimistas para un uso operativo.
+    """
 
     archivo: str
     objetivo: str
 
     def cargar(self) -> None:
+        """Lee la tabla de la pregunta y separa entrenamiento, validación y prueba.
+
+        Además de los conjuntos completos, separa las estaciones sin historia en entrenamiento
+        (`*_nuevas`): miden el arranque en frío, es decir, qué tan bien funciona el modelo en
+        estaciones que abren después de entrenar, un caso real de la red.
+        """
         df = pd.read_parquet(self.tabla_path or PROCESSED_DATA_DIR / self.archivo)
         self.df = df
         self.train = df[df["conjunto"] == "entrenamiento"]
@@ -288,6 +337,11 @@ class SupervisadoTrainer(BaseTrainer):
             self.eval[f"{conjunto}_nuevas"] = d[~d["estacion"].isin(estaciones_train)]
 
     def parametros_datos(self) -> dict:
+        """Rango de fechas (por hora objetivo) y tamaño de cada partición.
+
+        Se registran como parámetros del run para que cualquier resultado indique con qué periodo
+        se entrenó, validó y probó.
+        """
         p = {"n_entrenamiento": len(self.train)}
         for conjunto in ("entrenamiento", "validacion", "prueba"):
             h = self.df.loc[self.df["conjunto"] == conjunto, "hora_objetivo"]
@@ -296,14 +350,17 @@ class SupervisadoTrainer(BaseTrainer):
         return p
 
     def ajustar(self, modelo) -> None:
+        """Entrena el modelo con las variables de la pregunta (`features`), nunca con el resto."""
         modelo.fit(self.train[self.features], self.train[self.objetivo])
 
     def muestra_firma(self):
+        """Entradas y salidas de ejemplo con las que MLflow documenta el formato del modelo."""
         X = self.train[self.features].head(500)
         return X, self.predecir(self._modelo_actual, X)
 
     @staticmethod
     def predecir(modelo, X: pd.DataFrame) -> np.ndarray:
+        """Predicción del modelo para una tabla de variables."""
         return modelo.predict(X)
 
     @abstractmethod
@@ -311,7 +368,11 @@ class SupervisadoTrainer(BaseTrainer):
         """Métricas de un conjunto (sin prefijo)."""
 
     def _evaluar_con(self, predecir_df, baseline: bool) -> dict[str, float]:
-        """Métricas por conjunto con `predecir_df(d) -> predicciones`."""
+        """Calcula las métricas de cada conjunto con `predecir_df(d) -> predicciones`.
+
+        Compartir esta rutina entre `evaluar` (durante el entrenamiento) y `evaluar_predictor`
+        (con el modelo guardado) asegura que ambas mediciones sean idénticas y comparables.
+        """
         self.pred = {}
         metricas = {}
         for conjunto, d in self.eval.items():
@@ -324,14 +385,20 @@ class SupervisadoTrainer(BaseTrainer):
         return self.agregar_comparacion(metricas, baseline)
 
     def agregar_comparacion(self, metricas: dict, baseline: bool) -> dict:
-        """Gancho para métricas derivadas (por ejemplo, la mejora contra el baseline)."""
+        """Gancho para métricas derivadas, como la mejora contra el baseline (por defecto no agrega nada)."""
         return metricas
 
     def evaluar(self, c: Candidato) -> dict[str, float]:
+        """Evalúa un candidato ya entrenado en validación, prueba y estaciones nuevas."""
         self._modelo_actual = c.modelo
         return self._evaluar_con(lambda d: self.predecir(c.modelo, d[self.features]), c.baseline)
 
     def evaluar_predictor(self, predictor):
+        """Evalúa el modelo cargado desde `models/` con el predictor, en los mismos conjuntos.
+
+        Por qué: mide el archivo que se usará en producción, no el objeto en memoria. Si ambas
+        mediciones difieren, el guardado o la carga del modelo está fallando.
+        """
         metricas = self._evaluar_con(
             lambda d: predictor.predecir(d)[predictor.columna_pred].to_numpy(), baseline=False
         )
@@ -340,7 +407,13 @@ class SupervisadoTrainer(BaseTrainer):
 
 
 class P1Trainer(SupervisadoTrainer):
-    """Regresión: salidas por estación en la siguiente hora."""
+    """P1 (demanda): predice las salidas de cada estación en la siguiente hora (regresión).
+
+    Por qué es pertinente: Operaciones decide el rebalanceo de bicicletas según cuántas saldrán de
+    cada estación en la próxima hora. La variable es un conteo no negativo, y se compara contra
+    baselines simples (persistencia y estacional semanal) porque un modelo solo vale la pena si los
+    supera. El mejor se elige por el MAE de validación.
+    """
 
     pregunta = "p1"
     tarea = "demanda"
@@ -351,14 +424,30 @@ class P1Trainer(SupervisadoTrainer):
     mayor_es_mejor = False
 
     def __init__(self, *args, **kwargs):
+        """Prepara el diccionario donde se guarda el mejor MAE de los baselines, para medir la mejora."""
         super().__init__(*args, **kwargs)
         self.referencia: dict[str, float] = {}  # mejor MAE de los baselines, por conjunto
 
     def candidatos(self) -> list[Candidato]:
+        """Dos baselines y tres familias de modelos con las combinaciones del YAML.
+
+        - Persistencia (la hora siguiente = la hora actual) y estacional semanal (la misma hora de
+          la semana pasada): referencias que cualquier modelo debe superar.
+        - Regresión lineal: modelo simple e interpretable; muestra cuánto se gana al pasar de una
+          relación lineal a una no lineal (se empieza por lo simple, Huyen cap. 6). Puede predecir
+          valores negativos, que no tienen sentido para un conteo.
+        - Random Forest: captura relaciones no lineales entre hora, día y estación sin
+          transformar las variables.
+        - HistGradientBoosting con pérdida Poisson: las salidas son un conteo no negativo, y la
+          pérdida Poisson modela justamente ese tipo de variable, sin predecir valores negativos.
+        """
         cands = [
             Candidato("baseline-persistencia", BaselineColumna("salidas_t"), {"columna": "salidas_t"}, True),
             Candidato("baseline-estacional-semanal", BaselineColumna("salidas_lag_168h"), {"columna": "salidas_lag_168h"}, True),
         ]
+        for hp in self.hp.get("regresion-lineal", []):
+            nombre, hp = nombre_y_params(hp)
+            cands.append(Candidato(f"regresion-lineal-{nombre}", LinearRegression(**hp), hp))
         for hp in self.hp["random-forest"]:
             nombre, hp = nombre_y_params(hp)
             cands.append(Candidato(
@@ -378,12 +467,22 @@ class P1Trainer(SupervisadoTrainer):
         return cands
 
     def metricas_conjunto(self, y, pred) -> dict[str, float]:
+        """MAE y RMSE, ambos en bicicletas por estación y hora.
+
+        Por qué: el MAE es el error típico, fácil de explicar a Operaciones. El RMSE penaliza más
+        los errores grandes, que son los picos de demanda donde fallar produce estaciones vacías.
+        """
         return {
             "mae": float(mean_absolute_error(y, pred)),
             "rmse": float(np.sqrt(mean_squared_error(y, pred))),
         }
 
     def agregar_comparacion(self, m: dict, baseline: bool) -> dict:
+        """Calcula la mejora relativa del MAE contra el mejor baseline: 1 - MAE / MAE_baseline.
+
+        Por qué: un MAE aislado no dice si el modelo sirve; la mejora indica cuánto aporta sobre
+        la alternativa trivial. Es positiva si el modelo supera al baseline.
+        """
         for k, v in list(m.items()):
             if not k.endswith("_mae"):
                 continue
@@ -394,6 +493,11 @@ class P1Trainer(SupervisadoTrainer):
         return m
 
     def graficar(self, c: Candidato) -> dict[str, plt.Figure]:
+        """Compara las salidas reales y predichas, sumadas por hora, en las dos primeras semanas de prueba.
+
+        Por qué: muestra si el modelo sigue el ritmo diario y semanal de la demanda y dónde se
+        equivoca (por ejemplo, en los picos).
+        """
         d = self.eval["prueba"].assign(pred=self.pred["prueba"])
         d = d[d["hora_objetivo"] < d["hora_objetivo"].min() + pd.Timedelta(days=14)]
         total = d.groupby("hora_objetivo")[[self.objetivo, "pred"]].sum()
@@ -409,7 +513,13 @@ class P1Trainer(SupervisadoTrainer):
 
 
 class P2Trainer(SupervisadoTrainer):
-    """Clasificación: vaciado, normal o saturación en la siguiente hora."""
+    """P2 (riesgo): clasifica cada estación en la siguiente hora como vaciado, normal o saturación.
+
+    Por qué es pertinente: Logística prioriza rutas según qué estaciones se vaciarán o llenarán. Las
+    clases están muy desbalanceadas (alrededor de 3.5 % vaciado, 93 % normal y 3.5 % saturación),
+    por lo que la exactitud sería engañosa: se usan recall por clase y balanced accuracy, y los
+    modelos ponderan las clases. El mejor se elige por la balanced accuracy de validación.
+    """
 
     pregunta = "p2"
     tarea = "riesgo"
@@ -419,6 +529,13 @@ class P2Trainer(SupervisadoTrainer):
     criterio = "validacion_balanced_accuracy"
 
     def candidatos(self) -> list[Candidato]:
+        """Un baseline y dos modelos que compensan el desbalance con `class_weight`.
+
+        - Clase mayoritaria: siempre predice "normal"; da una balanced accuracy de 1/3 y es el piso.
+        - Árbol balanceado: modelo simple e interpretable; `class_weight='balanced'` evita que
+          ignore las clases raras, que son justo las que importan.
+        - Random Forest con `class_weight`: combina muchos árboles para reducir el sobreajuste.
+        """
         cands = [
             Candidato("baseline-clase-mayoritaria", DummyClassifier(strategy="most_frequent"), {"strategy": "most_frequent"}, True),
         ]
@@ -441,9 +558,16 @@ class P2Trainer(SupervisadoTrainer):
         return cands
 
     def parametros_datos(self) -> dict:
+        """Agrega el umbral de riesgo, que es parte de la definición de la etiqueta."""
         return {**super().parametros_datos(), "umbral_riesgo": U_RIESGO}
 
     def metricas_conjunto(self, y, pred) -> dict[str, float]:
+        """Recall por clase, balanced accuracy y F1 macro.
+
+        Por qué: el recall de vaciado y de saturación dice qué proporción de los eventos reales se
+        detecta, que es lo que le importa a Logística. La balanced accuracy y el F1 macro
+        promedian las clases por igual, sin dejar que la clase "normal" domine.
+        """
         recalls = recall_score(y, pred, labels=CLASES_P2, average=None, zero_division=0)
         return {
             **{f"recall_{c}": float(r) for c, r in zip(CLASES_P2, recalls)},
@@ -452,6 +576,11 @@ class P2Trainer(SupervisadoTrainer):
         }
 
     def graficar(self, c: Candidato) -> dict[str, plt.Figure]:
+        """Matriz de confusión de prueba, normalizada por fila.
+
+        Por qué: cada fila muestra qué porcentaje de los vaciados (o saturaciones) reales se detecta
+        y con qué se confunde, información que una sola métrica no da.
+        """
         fig, ax = plt.subplots(figsize=(5.5, 5))
         ConfusionMatrixDisplay.from_predictions(
             self.eval["prueba"][self.objetivo], self.pred["prueba"], labels=CLASES_P2,
@@ -463,7 +592,13 @@ class P2Trainer(SupervisadoTrainer):
 
 
 class P3Trainer(BaseTrainer):
-    """Clustering de estaciones por patrón de uso (perfil de entrenamiento)."""
+    """P3 (tipología): agrupa las estaciones por su patrón de uso (clustering).
+
+    Por qué es pertinente: Planeación necesita una tipología (residencial, de destino, de ocio o de
+    alto tráfico) y no existe una etiqueta que predecir, por eso es aprendizaje no supervisado. El
+    perfil usa solo el periodo de entrenamiento, así que el agrupamiento no depende de lo que
+    ocurre en validación ni prueba. El mejor k se elige por el coeficiente de silhouette.
+    """
 
     pregunta = "p3"
     tarea = "tipologia"
@@ -471,6 +606,12 @@ class P3Trainer(BaseTrainer):
     criterio = "silhouette"
 
     def cargar(self) -> None:
+        """Lee los perfiles de estación, sus coordenadas y las variables escaladas.
+
+        Las coordenadas vienen de la nomenclatura y solo se usan para el mapa. Las variables
+        escaladas se usan para calcular las métricas de agrupamiento con la misma escala en todos
+        los candidatos.
+        """
         self.perfiles = pd.read_parquet(self.tabla_path or PROCESSED_DATA_DIR / "p3_perfiles.parquet")
         cat = pd.read_parquet(INTERIM_DATA_DIR / "nomenclatura.parquet")
         self.coords = self.perfiles[["estacion"]].merge(
@@ -480,6 +621,13 @@ class P3Trainer(BaseTrainer):
         self.X_escalado = StandardScaler().fit_transform(self.X)  # para comparar métricas
 
     def candidatos(self) -> list[Candidato]:
+        """Un baseline por cuantiles de volumen y un K-Means por cada k del YAML.
+
+        - Cuantiles de volumen: agrupa solo por cantidad de tráfico; K-Means debe aportar estructura
+          más allá del volumen para justificarse.
+        - K-Means con `StandardScaler`: el escalado es necesario porque las variables tienen escalas
+          distintas (movimientos totales frente a proporciones) y K-Means usa distancia euclídea.
+        """
         cands = [Candidato("baseline-cuantiles-volumen", BaselineCuantiles(), {"n_grupos": 3}, True)]
         for hp in self.hp["kmeans"]:
             nombre, hp = nombre_y_params(hp)
@@ -496,6 +644,7 @@ class P3Trainer(BaseTrainer):
         return cands
 
     def parametros_datos(self) -> dict:
+        """Periodo del que sale el perfil (solo entrenamiento) y número de estaciones agrupadas."""
         return {
             "perfil_desde": str(INICIO),
             "perfil_hasta": str(FIN_ENTRENAMIENTO),
@@ -503,12 +652,20 @@ class P3Trainer(BaseTrainer):
         }
 
     def ajustar(self, modelo) -> None:
+        """Ajusta el agrupamiento con los perfiles de todas las estaciones (no hay conjuntos de validación ni prueba)."""
         modelo.fit(self.X)
 
     def muestra_firma(self):
+        """Perfiles de ejemplo y el grupo asignado, para documentar el formato del modelo en MLflow."""
         return self.X.head(100), self._modelo_actual.predict(self.X.head(100))
 
     def _metricas_etiquetas(self, modelo) -> dict[str, float]:
+        """Silhouette, Davies-Bouldin, Calinski-Harabasz e inercia de la agrupación actual.
+
+        Por qué: sin etiquetas reales, la calidad se mide por qué tan compactos y separados quedan los
+        grupos. Silhouette (mayor es mejor) elige el k; Davies-Bouldin (menor es mejor) y
+        Calinski-Harabasz (mayor es mejor) lo confirman; la inercia alimenta el codo.
+        """
         n_grupos = len(np.unique(self.etiquetas))
         metricas = {"n_grupos": float(n_grupos)}
         if n_grupos >= 2:
@@ -522,17 +679,24 @@ class P3Trainer(BaseTrainer):
         return metricas
 
     def evaluar(self, c: Candidato) -> dict[str, float]:
+        """Asigna grupo a cada estación con el candidato ya ajustado y calcula las métricas de agrupamiento."""
         self._modelo_actual = c.modelo
         self.etiquetas = np.asarray(c.modelo.predict(self.X))
         return self._metricas_etiquetas(c.modelo)
 
     def evaluar_predictor(self, predictor):
+        """Asigna los grupos con el modelo cargado desde `models/` y calcula las mismas métricas."""
         out = predictor.predecir(self.perfiles)
         self.etiquetas = out[predictor.columna_pred].to_numpy()
         metricas = self._metricas_etiquetas(predictor.modelo)
         return metricas, self.graficar(Candidato(predictor.guardado.nombre, predictor.modelo))
 
     def graficar(self, c: Candidato) -> dict[str, plt.Figure]:
+        """Mapa de las estaciones coloreadas por grupo.
+
+        Por qué: es lo que permite a Planeación interpretar los grupos, por ejemplo si los de ocio se
+        concentran en parques o los de destino en zonas de oficinas.
+        """
         fig, ax = plt.subplots(figsize=(6.5, 6))
         sc = ax.scatter(self.coords["longitud"], self.coords["latitud"], c=self.etiquetas,
                         cmap="tab10", s=22, alpha=0.85)
@@ -570,6 +734,7 @@ def main(
     seed: int = 42,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
 ):
+    """Entrena una pregunta (p1, p2 o p3) o todas, y registra los runs en MLflow."""
     elegidas = list(ENTRENADORES) if pregunta == "todas" else [pregunta.lower()]
     for p in elegidas:
         if p not in ENTRENADORES:
@@ -577,44 +742,6 @@ def main(
         ENTRENADORES[p](fraccion=fraccion, seed=seed, config_path=config).ejecutar()
     logger.success(f"Entrenamiento completo; experimento '{MLFLOW_EXPERIMENT_EQUIPO}' en {MLFLOW_TRACKING_URI}")
 
-    # Separar conjuntos usando la columna que tu equipo ya construyó
-    df_train = df_p1[df_p1["conjunto"] == "entrenamiento"]
-    df_test = df_p1[df_p1["conjunto"] == "validacion"]
-
-    X_train = df_train[FEATURES_P1]
-    y_train = df_train[OBJETIVO_P1]
-    X_test = df_test[FEATURES_P1]
-    y_test = df_test[OBJETIVO_P1]
-
-    logger.info(f"Entrenando baseline P1 con {len(X_train)} registros...")
-    
-    # Configurar MLflow (puedes cambiar "equipo04" por el de tu equipo si lo requieren)
-    mlflow.set_experiment("mibici-equipo04")
-    
-    with mlflow.start_run(run_name="P1_baseline_regresion"):
-        modelo = LinearRegression()
-        modelo.fit(X_train, y_train)
-        
-        predicciones = modelo.predict(X_test)
-        test_mae = mean_absolute_error(y_test, predicciones)
-        
-        # 1. Registrar Parámetros
-        mlflow.log_param("modelo", "LinearRegression")
-        mlflow.log_param("data_version", data_version)
-        mlflow.log_param("features", ", ".join(FEATURES_P1))
-        
-        # 2. Registrar Métricas
-        mlflow.log_metric("validacion_mae", test_mae)
-        
-        # 3. Registrar Etiquetas
-        mlflow.set_tag("pregunta", "P1")
-        mlflow.set_tag("equipo", "Equipo04")
-        mlflow.set_tag("commit", obtener_commit())
-        
-        # 4. Registrar Artefacto (el modelo)
-        mlflow.sklearn.log_model(modelo, "modelo_baseline_p1")
-        
-    logger.success(f"Entrenamiento completado y registrado en MLflow. MAE de validación: {test_mae:.4f}")
 
 if __name__ == "__main__":
     app()

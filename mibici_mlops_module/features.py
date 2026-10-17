@@ -396,6 +396,7 @@ def main(
     resumen_limpieza_path: Path = INTERIM_DATA_DIR / "resumen_limpieza.json",
     output_dir: Path = PROCESSED_DATA_DIR,
 ):
+    """Construye las tablas P1, P2 y P3 desde los viajes limpios y las guarda en `data/processed/`."""
     logger.info("Generating features from dataset...")
     viajes = pd.read_parquet(viajes_path)
     cat = pd.read_parquet(nomenclatura_path)

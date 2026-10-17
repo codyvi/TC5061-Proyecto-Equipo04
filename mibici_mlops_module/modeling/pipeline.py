@@ -31,7 +31,12 @@ app = typer.Typer()
 
 
 def evaluar_y_registrar(trainer: BaseTrainer) -> dict[str, float]:
-    """Evalúa con el predictor el modelo guardado por `trainer.ejecutar()` y lo registra."""
+    """Evalúa con el predictor el modelo guardado y registra la evaluación como un run de MLflow.
+
+    Por qué es pertinente: mide el archivo de `models/` que se usará en producción, no el objeto
+    en memoria del entrenamiento. `max_dif_vs_entrenamiento` compara ambas mediciones y debe ser 0;
+    si no lo es, el guardado o la carga del modelo está alterando las predicciones.
+    """
     predictor = PREDICTORES[trainer.pregunta]()
     metricas, figuras = trainer.evaluar_predictor(predictor)
     entrenamiento = trainer.mejor["metricas"]
@@ -79,6 +84,7 @@ def main(
     seed: int = 42,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
 ):
+    """Entrena y evalúa una pregunta (p1, p2 o p3) o todas, registrando ambos pasos en MLflow."""
     elegidas = list(ENTRENADORES) if pregunta == "todas" else [pregunta.lower()]
     for p in elegidas:
         if p not in ENTRENADORES:
