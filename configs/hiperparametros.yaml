@@ -4,30 +4,32 @@
 # `nombre` es opcional y forma parte del nombre del run (P1-demanda-random-forest-<nombre>);
 # si se omite, se arma con los hiperparámetros (n100-prof14-...).
 # Los baselines no tienen hiperparámetros y corren una sola vez.
+#
+# Primera entrega: una combinación por modelo (las demás están comentadas con `#`; quita el
+# `#` para volver a correrlas). Para dejar un modelo fuera, vacía su lista: `random-forest: []`.
 
 p1:
   random-forest:
     - {nombre: base, n_estimators: 100, max_depth: 14, min_samples_leaf: 20, max_samples: 0.3}
-    - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
-    - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
+    # - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
+    # - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
   hist-gradient-boosting-poisson:
     - {nombre: base, learning_rate: 0.10, max_iter: 300, max_leaf_nodes: 63, l2_regularization: 0.0}
-    - {nombre: lento-lr0.05, learning_rate: 0.05, max_iter: 500, max_leaf_nodes: 31, l2_regularization: 0.2}
+    # - {nombre: lento-lr0.05, learning_rate: 0.05, max_iter: 500, max_leaf_nodes: 31, l2_regularization: 0.2}
 
 
 p2:
   arbol-balanceado:
     - {nombre: base, max_depth: 10, min_samples_leaf: 50}
-    - {nombre: simple, max_depth: 6, min_samples_leaf: 100}
-    - {nombre: muy-profundo, max_depth: 20, min_samples_leaf: 20}
+    # - {nombre: simple, max_depth: 6, min_samples_leaf: 100}
+    # - {nombre: muy-profundo, max_depth: 20, min_samples_leaf: 20}
   random-forest-class-weight:
     - {nombre: base, n_estimators: 100, max_depth: 14, min_samples_leaf: 20, max_samples: 0.3}
-    - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
-    - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
+    # - {nombre: bosque-grande, n_estimators: 200, max_depth: 12, min_samples_leaf: 30, max_samples: 0.4}
+    # - {nombre: muy-profundo, n_estimators: 100, max_depth: 20, min_samples_leaf: 5, max_samples: 0.2}
 
 p3:
   kmeans:
     - {nombre: k3, k: 3, n_init: 10}
-    - {nombre: k4, k: 5, n_init: 10}
-    - {nombre: k6, k: 7, n_init: 10}
-    
+    # - {nombre: k5, k: 5, n_init: 10}
+    # - {nombre: k7, k: 7, n_init: 10}

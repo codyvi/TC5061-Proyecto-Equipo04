@@ -23,10 +23,10 @@ from mibici_mlops_module.config import (
     DATOS_ABIERTOS_URL,
     DUR_MAX,
     DUR_MIN,
+    EQUIPO,
     INTERIM_DATA_DIR,
     MANIFEST_PATH,
     MESES,
-    EQUIPO,
     MLFLOW_EXPERIMENT_EQUIPO,
     MLFLOW_TRACKING_URI,
     PORTAL_URL,
@@ -65,6 +65,11 @@ def normalizar_nombre(col: str) -> str:
 
 
 def sha256_archivo(ruta: Path, bloque: int = 1 << 20) -> str:
+    """Hash SHA-256 de un archivo, leído por bloques.
+
+    Por qué: es la huella con la que el manifiesto detecta si un CSV cambió, base de la versión de
+    los datos.
+    """
     h = hashlib.sha256()
     with open(ruta, "rb") as f:
         while chunk := f.read(bloque):
@@ -84,6 +89,7 @@ def detectar_codificacion(ruta: Path) -> str:
 
 
 def _abrir(url: str):
+    """Abre una URL del portal con un `User-Agent` identificable y un tiempo máximo de espera."""
     return urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=120)
 
 
@@ -94,6 +100,7 @@ class MiBiciDataset:
     """Descarga, normaliza y limpia los CSV de MiBici."""
 
     def __init__(self, raw_dir: Path = RAW_DATA_DIR, interim_dir: Path = INTERIM_DATA_DIR):
+        """Define las carpetas de datos crudos (`raw_dir`) y normalizados (`interim_dir`)."""
         self.raw_dir = Path(raw_dir)
         self.interim_dir = Path(interim_dir)
 
@@ -158,6 +165,11 @@ class MiBiciDataset:
         return df, enc
 
     def leer_nomenclatura(self) -> tuple[pd.DataFrame, str, str]:
+        """Lee la nomenclatura de estaciones más reciente y normaliza sus columnas.
+
+        Por qué: la nomenclatura es la lista de estaciones válidas y trae la capacidad (`dpcapacity`) de
+        cada una, necesaria para definir el riesgo de P2.
+        """
         archivos = sorted(self.raw_dir.glob("nomenclatura_*.csv"))
         if not archivos:
             raise FileNotFoundError(f"No hay nomenclatura en {self.raw_dir}")
@@ -241,6 +253,7 @@ class MiBiciDataset:
 # Manifiesto de versiones
 # ---------------------------------------------------------------------------
 def _entrada(ruta: Path, url: str | None, codificacion: str | None, registros: int) -> dict:
+    """Describe un archivo para el manifiesto: nombre, tamaño, registros, hash y, si aplica, URL y codificación."""
     e = {
         "archivo": ruta.name,
         "bytes": ruta.stat().st_size,
@@ -273,6 +286,7 @@ def construir_manifest(raw: list[dict], interim: list[dict], meses: list[str]) -
 
 
 def guardar_json(obj: dict, ruta: Path) -> None:
+    """Escribe un diccionario como JSON legible (crea la carpeta si hace falta)."""
     ruta.parent.mkdir(parents=True, exist_ok=True)
     ruta.write_text(
         json.dumps(obj, ensure_ascii=False, indent=2, default=int) + "\n", encoding="utf-8"
@@ -280,6 +294,11 @@ def guardar_json(obj: dict, ruta: Path) -> None:
 
 
 def cargar_manifest(ruta: Path = MANIFEST_PATH) -> dict:
+    """Lee `data/manifest.json`.
+
+    Por qué: el entrenamiento toma de aquí la `data_version`, de modo que cada run de MLflow
+    indique con qué datos se ejecutó.
+    """
     return json.loads(Path(ruta).read_text(encoding="utf-8"))
 
 
@@ -339,6 +358,7 @@ def main(
     interim_dir: Path = INTERIM_DATA_DIR,
     manifest_path: Path = MANIFEST_PATH,
 ):
+    """Descarga, normaliza y limpia los datos, genera el manifiesto y, con `--mlflow`, registra la versión."""
     ds = MiBiciDataset(raw_dir, interim_dir)
     urls = ds.descargar(meses, force) if descargar else {}
     logger.info("Normalizando, limpiando y guardando en Parquet...")
