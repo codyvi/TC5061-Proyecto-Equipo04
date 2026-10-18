@@ -9,7 +9,28 @@
 
 </div>
 
-Proyecto MiBici - Predicción de demanda, clasificación de riesgos y clustering de estaciones con MLflow.
+## Propósito
+
+El principal costo operativo de un sistema de bicicleta pública son las estaciones vacías o llenas, que obligan a rebalancear con camionetas. Este proyecto construye, con datos abiertos de MiBici (Guadalajara), una base **reproducible** de experimentos de aprendizaje automático para apoyar esa operación: ingesta versionada de los datos, variables sin fuga de información, modelos con *baseline* y seguimiento completo de cada experimento en MLflow.
+
+## Las tres preguntas
+
+| Pregunta | Qué se predice o agrupa | Granularidad y horizonte | Quién la usa y qué decide |
+| --- | --- | --- | --- |
+| **P1. Demanda** (regresión) | Número de viajes que inician en cada estación | Estación × hora, siguiente hora (t+1) | Operaciones: cuántas bicicletas llevar a cada estación |
+| **P2. Riesgo** (clasificación) | Clase `vaciado`, `normal` o `saturación`, según el índice de flujo (llegadas − salidas) / capacidad con umbral de ±0.20 | Estación × hora, siguiente hora (t+1) | Logística: qué estaciones visitar primero en la ruta |
+| **P3. Tipología** (clustering) | Grupos de estaciones con patrones de uso similares | Estación, sin horizonte (perfil de enero a abril) | Planeación: qué estrategia aplicar por tipo de estación |
+
+Los datos solo registran viajes, no el inventario real de bicicletas; por eso la clase de P2 es una aproximación al riesgo. Detalle en el [ML Canvas](references/ml_canvas_mibici.png).
+
+## Integrantes y roles
+
+| Integrante | Matrícula | Rol | Aportes |
+| --- | --- | --- | --- |
+| David Alonso Cantú Martínez (`codyvi`) | A00822455 | MLOps Engineer / Data Engineer | Estructura del repositorio (CCDS), ingesta y versionado de datos, variables, y entrenamiento y evaluación con MLflow |
+| Martín Rogelio Cantú González | A01797809 | Software Engineer | Pruebas automáticas (pytest) y refactorización del código |
+| Luis Alfredo Ojeda Benito | A01750598 | Data Scientist | Entrenamiento y registro en MLflow de P1 (demanda) |
+| Carlo Eugenio Leviaguirre Chavez | A01022264 | Machine Learning Engineer | Ajuste de hiperparámetros y entrenamiento de modelos |
 
 ## ML Canvas y arquitectura
 
@@ -175,7 +196,7 @@ Notas:
 **Qué queda en MLflow** (experimento `mibici-equipo04`):
 
 - Un run de datos, `datos-<data_version>` (etapa `ingesta`), con la versión de los datos, el commit de Git, los meses, los criterios de limpieza, los conteos y `manifest.json`.
-- Un run por candidato, con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k4`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, hiperparámetros), métricas, figuras, el modelo con su firma y las etiquetas `equipo`, `pregunta`, `git_commit` y `git_dirty`.
+- Un run por candidato, con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k3`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, hiperparámetros), métricas, figuras, el modelo con su firma y las etiquetas `equipo`, `pregunta`, `git_commit` y `git_dirty`.
 - Un run de evaluación por pregunta (`P1-demanda-evaluacion-<modelo>`): carga el mejor modelo desde `models/` con el predictor y registra sus métricas en validación y prueba, las figuras y `max_dif_vs_entrenamiento` (debe ser 0: el modelo guardado reproduce lo entrenado).
 - El mejor candidato de cada pregunta, según la validación, queda en `models/pX.joblib`.
 
