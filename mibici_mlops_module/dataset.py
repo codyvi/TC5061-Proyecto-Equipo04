@@ -32,7 +32,7 @@ from mibici_mlops_module.config import (
     PORTAL_URL,
     RAW_DATA_DIR,
 )
-from mibici_mlops_module.utils import info_git
+from mibici_mlops_module.utils import anidada, corrida_proyecto, info_git
 
 app = typer.Typer()
 
@@ -321,8 +321,7 @@ def registrar_en_mlflow(manifest: dict, resumen: dict | None = None) -> None:
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
-    activa = mlflow.active_run() is not None
-    with mlflow.start_run(run_name=f"datos-{manifest['data_version']}", nested=activa):
+    with mlflow.start_run(run_name=f"datos-{manifest['data_version']}", nested=anidada()):
         mlflow.set_tags(
             {
                 "equipo": EQUIPO,
@@ -370,7 +369,8 @@ def main(
     logger.info("Normalizando, limpiando y guardando en Parquet...")
     viajes, _, resumen, manifest = ds.build(meses, urls, manifest_path)
     if mlflow:
-        registrar_en_mlflow(manifest, resumen)
+        with corrida_proyecto("Ingesta de datos"):
+            registrar_en_mlflow(manifest, resumen)
     logger.success(
         f"Datos {manifest['data_version']}: {resumen['viajes_crudos']:,} -> "
         f"{len(viajes):,} viajes. Manifiesto en {manifest_path}"

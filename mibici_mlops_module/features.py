@@ -28,6 +28,7 @@ from mibici_mlops_module.config import (
     SEMANA_SANTA,
     U_RIESGO,
 )
+from mibici_mlops_module.utils import corrida_proyecto
 
 app = typer.Typer()
 
@@ -402,7 +403,8 @@ def main(
     viajes = pd.read_parquet(viajes_path)
     cat = pd.read_parquet(nomenclatura_path)
     resumen = json.loads(resumen_limpieza_path.read_text(encoding="utf-8"))
-    r = FeatureBuilder().build(viajes, cat, output_dir, resumen)
+    with corrida_proyecto("Construcción de variables"):
+        r = FeatureBuilder().build(viajes, cat, output_dir, resumen)
     logger.success(
         f"Features generation complete: P1/P2 {r['filas_p1']:,} filas, "
         f"P3 {r['estaciones_p3']} estaciones -> {output_dir}"
