@@ -27,6 +27,7 @@ from mibici_mlops_module.config import (
 )
 from mibici_mlops_module.modeling.predict import PREDICTORES
 from mibici_mlops_module.modeling.train import ENTRENADORES, BaseTrainer
+from mibici_mlops_module.utils import anidada, corrida_proyecto, parsear_hp
 
 app = typer.Typer()
 
@@ -48,7 +49,7 @@ def evaluar_y_registrar(trainer: BaseTrainer) -> dict[str, float]:
     nombre_run = f"{trainer.pregunta.upper()}-{trainer.tarea}-evaluacion-{guardado.nombre}"
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
-    with mlflow.start_run(run_name=nombre_run):
+    with mlflow.start_run(run_name=nombre_run, nested=anidada()):
         mlflow.set_tags(
             {
                 "equipo": EQUIPO,
@@ -84,15 +85,26 @@ def main(
     fraccion: Annotated[float, typer.Option(help="Fracción del entrenamiento (pruebas rápidas)")] = 1.0,
     seed: int = SEED,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
+    modelo: Annotated[str | None, typer.Option(help="Solo este modelo (p. ej. rf, hgb, dt, kmeans)")] = None,
+    hp: Annotated[list[str] | None, typer.Option(help="Hiperparámetro clave=valor, repetible")] = None,
 ):
     """Entrena y evalúa una pregunta (p1, p2 o p3) o todas, registrando ambos pasos en MLflow."""
-    elegidas = list(ENTRENADORES) if pregunta == "todas" else [pregunta.lower()]
+    elegidas = list(ENTRENADORES) if pregunta in ("", "todas") else [pregunta.lower()]
     for p in elegidas:
         if p not in ENTRENADORES:
             raise typer.BadParameter(f"pregunta desconocida: {p}")
-        trainer = ENTRENADORES[p](fraccion=fraccion, seed=seed, config_path=config)
-        trainer.ejecutar()
-        evaluar_y_registrar(trainer)
+    nombres = {"p1": "Pregunta 1 - demanda por hora", "p2": "Pregunta 2 - clasificación", "p3": "Pregunta 3 - grupos"}
+    hiperparametros = parsear_hp(hp or [])
+    # los hiperparámetros indicados distinguen corridas del mismo modelo (p. ej. "rf n_estimators=200")
+    detalle = " ".join([modelo or "", *(f"{k}={v}" for k, v in hiperparametros.items())]).strip()
+    nombre = " + ".join(nombres[p] for p in elegidas) + (f" ({detalle})" if detalle else "")
+    with corrida_proyecto(nombre):
+        for p in elegidas:
+            trainer =ENTRENADORES[p](
+                fraccion=fraccion, seed=seed, config_path=config, modelo=modelo, hp=hiperparametros
+            )
+            trainer.ejecutar()
+            evaluar_y_registrar(trainer)
 
 
 if __name__ == "__main__":

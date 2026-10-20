@@ -12,6 +12,7 @@ pregunta según la validación (nunca la prueba).
 """
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
@@ -79,9 +80,20 @@ from mibici_mlops_module.modeling.baseline import (
     ModeloGuardado,
     guardar_modelo,
 )
-from mibici_mlops_module.utils import info_git
+from mibici_mlops_module.utils import anidada, corrida_proyecto, info_git, parsear_hp
 
 app = typer.Typer()
+
+# Alias cortos de modelo por pregunta (también se aceptan los nombres completos del YAML)
+ALIAS_MODELOS = {
+    "p1": {
+        "rf": "random-forest",
+        "hgb": "hist-gradient-boosting-poisson",
+        "lr": "regresion-lineal",
+    },
+    "p2": {"dt": "arbol-balanceado", "rf": "random-forest-class-weight"},
+    "p3": {"kmeans": "kmeans"},
+}
 
 CLASES_P2 = ["vaciado", "normal", "saturacion"]
 
@@ -154,18 +166,34 @@ class BaseTrainer(ABC):
         seed: int = SEED,
         tabla_path: Path | None = None,
         config_path: Path = HIPERPARAMETROS_PATH,
+        modelo: str | None = None,
+        hp: dict | None = None,
     ):
         """Lee los hiperparámetros de la pregunta, la versión de los datos y el commit de Git.
 
         `fraccion` usa solo parte del entrenamiento (pruebas rápidas) y `seed` fija los modelos.
+        Con `modelo` se entrena solo ese modelo (más los baselines): parte de la primera
+        combinación del YAML y `hp` sobrescribe los hiperparámetros indicados.
         """
         self.config_path = config_path
         self.hp = cargar_hiperparametros(config_path)[self.pregunta]
+        if modelo:
+            self.hp = self._solo_modelo(modelo, hp or {})
         self.fraccion = fraccion
         self.seed = seed
         self.tabla_path = tabla_path
         self.manifest = cargar_manifest()
         self.git = info_git()
+
+    def _solo_modelo(self, modelo: str, hp: dict) -> defaultdict:
+        """Deja una única combinación del modelo elegido: la del YAML con `hp` encima."""
+        modelo = ALIAS_MODELOS[self.pregunta].get(modelo, modelo)
+        if modelo not in ALIAS_MODELOS[self.pregunta].values():
+            raise typer.BadParameter(f"modelo desconocido para {self.pregunta}: {modelo}")
+        base = (self.hp.get(modelo) or [{}])[0]
+        if hp:  # con hiperparámetros distintos, el nombre del run se deriva de ellos
+            base = {k: v for k, v in base.items() if k != "nombre"}
+        return defaultdict(list, {modelo: [{**base, **hp}]})
 
     # ---- a definir por cada pregunta -------------------------------------------------
     @abstractmethod
@@ -218,7 +246,7 @@ class BaseTrainer(ABC):
         resultados = []
         for c in self.candidatos():
             nombre_run = f"{self.pregunta.upper()}-{self.tarea}-{c.nombre}"
-            with mlflow.start_run(run_name=nombre_run) as run:
+            with mlflow.start_run(run_name=nombre_run, nested=anidada()) as run:
                 logger.info(f"[{nombre_run}] entrenando")
                 mlflow.set_tags(
                     {
@@ -703,7 +731,7 @@ class P3Trainer(BaseTrainer):
         fig.tight_layout()
         modelo = self.mejor["candidato"].modelo
         perfil = self.perfiles.assign(grupo=modelo.predict(self.X)).groupby("grupo")[self.features].mean()
-        with mlflow.start_run(run_id=self.mejor["run_id"]):
+        with mlflow.start_run(run_id=self.mejor["run_id"], nested=anidada()):
             mlflow.log_figure(fig, "figuras/barrido_k.png")
             mlflow.log_table(perfil.reset_index(), "perfil_por_grupo.json")
         plt.close(fig)
@@ -718,13 +746,19 @@ def main(
     fraccion: Annotated[float, typer.Option(help="Fracción del entrenamiento (pruebas rápidas)")] = 1.0,
     seed: int = SEED,
     config: Annotated[Path, typer.Option(help="YAML con los hiperparámetros")] = HIPERPARAMETROS_PATH,
+    modelo: Annotated[str | None, typer.Option(help="Solo este modelo (p. ej. rf, hgb, dt, kmeans)")] = None,
+    hp: Annotated[list[str] | None, typer.Option(help="Hiperparámetro clave=valor, repetible")] = None,
 ):
     """Entrena una pregunta (p1, p2 o p3) o todas, y registra los runs en MLflow."""
-    elegidas = list(ENTRENADORES) if pregunta == "todas" else [pregunta.lower()]
+    elegidas = list(ENTRENADORES) if pregunta in ("", "todas") else [pregunta.lower()]
     for p in elegidas:
         if p not in ENTRENADORES:
             raise typer.BadParameter(f"pregunta desconocida: {p}")
-        ENTRENADORES[p](fraccion=fraccion, seed=seed, config_path=config).ejecutar()
+    with corrida_proyecto():
+        for p in elegidas:
+            ENTRENADORES[p](
+                fraccion=fraccion, seed=seed, config_path=config, modelo=modelo, hp=parsear_hp(hp or [])
+            ).ejecutar()
     logger.success(f"Entrenamiento completo; experimento '{MLFLOW_EXPERIMENT_EQUIPO}' en {MLFLOW_TRACKING_URI}")
 
 

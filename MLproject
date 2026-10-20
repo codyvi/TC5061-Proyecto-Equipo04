@@ -1,0 +1,36 @@
+name: mibici_mlops_equipo04
+
+python_env: python_env.yaml
+
+# Rutas, fechas, meses y semilla no se repiten aquí: viven en mibici_mlops_module/config.py.
+# Un parámetro vacío ("") significa "usa el valor de configs/hiperparametros.yaml".
+entry_points:
+  ingest:
+    command: "python -m mibici_mlops_module.dataset --mlflow"
+
+  features:
+    command: "python -m mibici_mlops_module.features"
+
+  train:
+    parameters:
+      question: {type: string, default: ""}   # p1, p2, p3 o todas; vacío = todas
+      model: {type: string, default: ""}      # rf, hgb, lr (P1); dt, rf (P2); kmeans (P3); vacío = todos
+      # Hiperparámetros: solo aplican a los modelos que los usan
+      n_estimators: {type: string, default: ""}
+      max_depth: {type: string, default: ""}
+      min_samples_leaf: {type: string, default: ""}
+      max_samples: {type: string, default: ""}
+      learning_rate: {type: string, default: ""}
+      max_iter: {type: string, default: ""}
+      max_leaf_nodes: {type: string, default: ""}
+      l2_regularization: {type: string, default: ""}
+      k: {type: string, default: ""}
+      n_init: {type: string, default: ""}
+    command: >-
+      python -m mibici_mlops_module.modeling.pipeline
+      --pregunta {question} --modelo {model}
+      --hp n_estimators={n_estimators} --hp max_depth={max_depth}
+      --hp min_samples_leaf={min_samples_leaf} --hp max_samples={max_samples}
+      --hp learning_rate={learning_rate} --hp max_iter={max_iter}
+      --hp max_leaf_nodes={max_leaf_nodes} --hp l2_regularization={l2_regularization}
+      --hp k={k} --hp n_init={n_init}

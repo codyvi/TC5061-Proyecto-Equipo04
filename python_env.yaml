@@ -1,0 +1,21 @@
+# Entorno de `mlflow run`. Mismas versiones fijas que requirements.txt (sin las de notebooks,
+# documentación y desarrollo: jupyter, ipykernel, mkdocs, ruff, pip).
+python: "3.12"
+build_dependencies:
+  - pip
+dependencies:
+  - loguru==0.7.3
+  - python-dotenv==1.2.4
+  - tqdm==4.70.1
+  - typer==0.27.3
+  - numpy==2.5.4
+  - pandas==3.0.6
+  - pyarrow==25.0.1
+  - scikit-learn==1.9.1
+  - mlflow==3.17.1
+  - pyyaml==6.0.3
+  - skops==0.16.0
+  - pytest==9.1.1
+  - matplotlib==3.11.2
+  - seaborn==0.13.2
+  - scipy==1.18.1
