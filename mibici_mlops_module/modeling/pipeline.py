@@ -54,6 +54,8 @@ def evaluar_y_registrar(trainer: BaseTrainer) -> dict[str, float]:
             {
                 "equipo": EQUIPO,
                 "pregunta": trainer.pregunta.upper(),
+                "question": trainer.pregunta.upper(),
+                "stage_of_work": "evaluation",
                 "etapa": "evaluacion",
                 "modelo": guardado.nombre,
                 "baseline": "false",
@@ -71,9 +73,9 @@ def evaluar_y_registrar(trainer: BaseTrainer) -> dict[str, float]:
         )
         mlflow.log_metrics({**metricas, "max_dif_vs_entrenamiento": float(dif)})
         for archivo, fig in figuras.items():
-            mlflow.log_figure(fig, f"figuras/{archivo}")
+            mlflow.log_figure(fig, f"plots/{archivo}")
             plt.close(fig)
-        mlflow.log_artifact(str(PROJ_ROOT / "data" / "manifest.json"), "datos")
+        mlflow.log_artifact(str(PROJ_ROOT / "data" / "manifest.json"), "data")
     logger.success(f"[{nombre_run}] {trainer.criterio} = {metricas[trainer.criterio]:.4f} "
                    f"(dif. vs entrenamiento: {dif:.2e})")
     return metricas

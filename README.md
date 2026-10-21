@@ -180,9 +180,9 @@ En ambos casos el entorno se crea una sola vez y las siguientes corridas lo reut
 | --- | --- | --- |
 | `ingest` | `mibici_mlops_module.dataset --mlflow` | ninguno: meses, rutas y criterios de limpieza vienen de `config.py` |
 | `features` | `mibici_mlops_module.features` | ninguno |
-| `train` | `mibici_mlops_module.modeling.pipeline` (entrena y evalúa) | `question` (`p1`, `p2`, `p3`; vacío = todas), `model` (ver abajo; vacío = todos los de la pregunta), e hiperparámetros: `n_estimators`, `max_depth`, `min_samples_leaf`, `max_samples`, `learning_rate`, `max_iter`, `max_leaf_nodes`, `l2_regularization`, `k`, `n_init` |
+| `train` | `mibici_mlops_module.modeling.pipeline` (entrena y evalúa) | `question` (`p1`, `p2`, `p3`; vacío = todas), `model` (ver abajo; vacío = todos los de la pregunta), `seed` (semilla de los modelos; por defecto `42`, el `SEED` de `config.py`), e hiperparámetros: `n_estimators`, `max_depth`, `min_samples_leaf`, `max_samples`, `learning_rate`, `max_iter`, `max_leaf_nodes`, `l2_regularization`, `k`, `n_init` |
 
-Rutas, fechas, particiones y semilla no son parámetros: salen de `config.py`. Un hiperparámetro vacío toma el valor de `configs/hiperparametros.yaml`; si se indica, sustituye al del YAML. Con `model` se entrena solo ese modelo (más los baselines de la pregunta). Alias de `model`: P1 `rf` (Random Forest), `hgb` (HistGradientBoosting Poisson), `lr` (regresión lineal); P2 `dt` (árbol balanceado), `rf` (Random Forest con class weight); P3 `kmeans`.
+Rutas, fechas y particiones no son parámetros: salen de `config.py`. La semilla sí se puede cambiar con `seed` para medir la estabilidad entre corridas (`-P seed=1`); sin indicarla se usa 42. Un hiperparámetro vacío toma el valor de `configs/hiperparametros.yaml`; si se indica, sustituye al del YAML. Con `model` se entrena solo ese modelo (más los baselines de la pregunta). Sin hiperparámetros se corren todas sus combinaciones del YAML (la búsqueda anidada); con alguno, una sola combinación. Alias de `model`: P1 `rf` (Random Forest), `hgb` (HistGradientBoosting Poisson), `lr` (regresión lineal); P2 `dt` (árbol balanceado), `rf` (Random Forest con class weight); P3 `kmeans`.
 
 **Hiperparámetros por pregunta y modelo** (los que se pueden pasar con `-P`; los valores son los de la combinación `base` de `configs/hiperparametros.yaml`):
 
@@ -208,11 +208,27 @@ Rutas, fechas, particiones y semilla no son parámetros: salen de `config.py`. U
 
 Pasar un hiperparámetro que el modelo no usa (por ejemplo `-P k=3` con `model=rf`) provoca un error, así que indica solo los de su fila. Si pasas alguno, el nombre del run se deriva de los valores (`P1-demanda-random-forest-n100-prof14-...`); si no pasas ninguno, se usa el `nombre` del YAML.
 
+**Ejemplos con hiperparámetros** (ver `configs/hiperparametros.yaml` para más combinaciones):
+
+```bash
+# P1: Random Forest con una combinación puntual
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p1 -P model=rf -P n_estimators=100 -P max_depth=14 -P min_samples_leaf=20 -P max_samples=0.3
+
+# P2: Random Forest con class weight
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p2 -P model=rf -P n_estimators=100 -P max_depth=14 -P min_samples_leaf=20 -P max_samples=0.3
+
+# P3: K-Means con k=3
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3 -P model=kmeans -P k=3 -P n_init=10
+
+# Cualquiera de los anteriores con otra semilla
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p1 -P model=rf -P n_estimators=300 -P seed=1
+```
+
 ### Qué queda en MLflow
 
 - Un run padre por cada `mlflow run`, del que cuelgan los demás. Lo crea `mlflow run` con un nombre aleatorio (p. ej. `puzzled-bat-941`), por lo que el código lo renombra: `Ingesta de datos` para `ingest`, `Construcción de variables` para `features` y `Pregunta 1 - demanda por hora (rf)`, `Pregunta 2 - clasificación` o `Pregunta 3 - grupos` para `train`, según `question` y `model`. Si pasas `model` o hiperparámetros, se agregan entre paréntesis para distinguir corridas de la misma pregunta (p. ej. `Pregunta 1 - demanda por hora (rf n_estimators=200 max_depth=12)`).
 - Un run de datos, `datos-<data_version>` (etapa `ingesta`), con la versión de los datos, el commit de Git, los meses, los criterios de limpieza, los conteos y `manifest.json`.
-- Un run por candidato, con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k3`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, hiperparámetros), métricas, figuras, el modelo con su firma y las etiquetas `equipo`, `pregunta`, `git_commit` y `git_dirty`.
+- Un run padre de búsqueda por pregunta (`P1-busqueda-demanda`, `stage_of_work=search`) y, anidado en él, un run por candidato con nombre descriptivo (`P1-demanda-random-forest-base`, `P3-tipologia-kmeans-k3`, etc.). Cada run guarda parámetros (fechas de cada partición, `data_version`, semilla, hiperparámetros), métricas (con `tiempo_entrenamiento_s` y `tiempo_inferencia_ms_por_1000_filas`), el conjunto de entrenamiento (`log_input`), el modelo con su firma y ejemplo de entrada, y las etiquetas `equipo`, `question`, `model_family`, `stage_of_work` (`baseline` o `candidate`), `git_commit` y `git_dirty`. Los artefactos van en subcarpetas: `plots/` (P1: real contra predicho; P2: matriz de confusión y curva precisión-recall; P3: mapa y perfil de los grupos), `data/` (`manifest.json`) y `config/` (`hiperparametros.yaml`). No se registran datos de usuarios: las tablas son por estación y hora.
 - Un run de evaluación por pregunta (`P1-demanda-evaluacion-<modelo>`): carga el mejor modelo desde `models/` con el predictor y registra sus métricas en validación y prueba, las figuras y `max_dif_vs_entrenamiento` (debe ser 0: el modelo guardado reproduce lo entrenado).
 - El mejor candidato de cada pregunta, según la validación, queda en `models/pX.joblib`.
 
@@ -271,7 +287,9 @@ Opciones de `predict`: `--pregunta`, `--conjunto entrenamiento|validacion|prueba
 
 ## Ejecución de principio a fin
 
-Pasos para reproducir todo desde cero, hasta ver los resultados en MLflow. Se ejecutan desde la raíz del repositorio en WSL/Linux.
+Pasos para reproducir todo desde cero, hasta ver los resultados en MLflow. Se ejecutan desde la raíz del repositorio en WSL/Linux. 
+
+> **Nota:** La ejecución por defecto usa los hiperparámetros de `configs/hiperparametros.yaml` para entrenar los modelos, si quieres probar otros, pasa `--config ruta.yaml` a `mlflow run . -e train` o pasa los hiperparámetros con `-P` (ver [MLflow Project](#mlflow-project)).
 
 > Si el paso 6 falla con `PermissionError: Permission denied: 'None'`, falta `uv` o `pyenv`: consulta el [requisito en MLflow Project](#mlflow-project).
 
@@ -300,22 +318,97 @@ mlflow run . -e ingest --experiment-name mibici-equipo04
 # 7. Variables: construye las tablas P1, P2 y P3 en data/processed/
 mlflow run . -e features --experiment-name mibici-equipo04
 
-# 8. Entrenamiento + evaluación del modelo elegido de cada pregunta (Ejemplos con Random Forest y KMeans; ver `configs/hiperparametros.yaml` para más combinaciones)
+# 8. Entrenamiento + evaluación del modelo elegido de cada pregunta 
 
 # P1: demanda por estación y hora
-mlflow run . -e train --experiment-name mibici-equipo04 -P question=p1 -P model=rf -P n_estimators=100 -P max_depth=14 -P min_samples_leaf=20 -P max_samples=0.3
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p1
 
 # P2: riesgo de vaciado o saturación
-mlflow run . -e train --experiment-name mibici-equipo04 -P question=p2 -P model=rf -P n_estimators=100 -P max_depth=14 -P min_samples_leaf=20 -P max_samples=0.3
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p2
 
 # P3: tipología de estaciones
-mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3 -P model=kmeans -P k=3 -P n_init=10
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3
 ```
 
 Después abre <http://127.0.0.1:5000> y entra al experimento **mibici-equipo04**.
 
 Notas:
 
-- Entrenar P1, P2 y P3 sin indicar `model` registra 9 runs con la configuración actual (una combinación por modelo, más los baselines): 4 de P1, 3 de P2 y 2 de P3. Para probar más combinaciones, quita el `#` a las que están comentadas en `configs/hiperparametros.yaml`; con todas son más de 20 runs y tarda varias decenas de minutos. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento).
+- Entrenar una pregunta sin indicar `model` corre sus baselines y todas las combinaciones de `configs/hiperparametros.yaml` (7 candidatos en P1, 7 en P2 y 4 en P3), anidados bajo un run padre de búsqueda. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento) desde `python -m mibici_mlops_module.modeling.pipeline`.
 - Conviene hacer `git commit` antes del paso 6: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Levanta `mlflow server` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
+
+## Selección del mejor modelo
+
+Para cada pregunta se corrió la búsqueda completa en el mismo experimento (`mibici-equipo04`), con la misma partición temporal (entrenamiento enero a abril, validación mayo, prueba junio) y las mismas métricas que en la entrega anterior. Los comandos fueron:
+
+```bash
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p1
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p2
+mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3
+```
+
+Cada pregunta se repitió con las semillas 1, 2, 3, 4 y 42 (`-P seed=<n>`; la 42 es la predeterminada y la que queda en `models/`). Para generar `reports/estabilidad.csv` (media y desviación de la métrica de decisión, y tiempos de entrenamiento e inferencia, por pregunta y modelo) una vez terminadas las corridas:
+
+>Nota: El comando necesita que MLFLOW_TRACKING_URI esté apuntando a tu servidor, igual que al entrenar. Si no, leerá el mlflow.db directo y puede mostrar resultados distintos o vacíos.
+
+```bash
+python -m mibici_mlops_module.modeling.estabilidad --salida reports/estabilidad.csv
+```
+
+Con `--pregunta p1` (o `p2`, `p3`) resume solo esa pregunta; sin `--salida` solo imprime las tablas en la terminal.
+
+Cada comando crea un run padre de búsqueda (`stage_of_work=search`) y un run hijo por candidato (`baseline` o `candidate`), con las etiquetas `question` y `model_family`. Para filtrarlos en la interfaz de MLflow: `tags.question = "P1" and tags.stage_of_work = "candidate"`.
+
+**Cómo se eligió.** El código guarda en `models/` el candidato que no es baseline con la mejor métrica de **validación** (nunca de prueba, para que la prueba siga siendo una estimación honesta). Después se revisó que la elección se sostuviera entre semillas y frente al costo.
+
+| Pregunta | Métrica de decisión | Por qué esa métrica |
+| --- | --- | --- |
+| P1 (demanda) | `validacion_mae` (menor es mejor) | error típico en bicicletas por estación y hora, que es lo que Operaciones usa para decidir el rebalanceo |
+| P2 (riesgo) | `validacion_balanced_accuracy` (mayor es mejor) | las clases de vaciado y saturación son raras; la exactitud simple las ignoraría |
+| P3 (tipología) | `entrenamiento_silhouette` (mayor es mejor) | no hay etiqueta real; mide qué tan compactos y separados quedan los grupos |
+
+**Resultados.** Media ± desviación estándar de 5 semillas (fuente: `reports/estabilidad.csv`). El entrenamiento está en segundos y la inferencia en milisegundos por cada 1000 filas.
+
+*P1 (MAE de validación, menor es mejor)*
+
+| Candidato | MAE | Entrenamiento (s) | Inferencia (ms) |
+| --- | --- | --- | --- |
+| Baseline persistencia | 0.9689 ± 0.0000 | 0.001 | 0.05 |
+| Baseline estacional semanal | 0.8911 ± 0.0000 | 0.001 | 0.05 |
+| **HistGradientBoosting Poisson `base`** | **0.7207 ± 0.0006** | 7.7 | 8.8 |
+| HistGradientBoosting Poisson `lento-lr0.05` | 0.7244 ± 0.0003 | 11.0 | 15.2 |
+| Random Forest `muy-profundo` | 0.7326 ± 0.0003 | 13.1 | 55.6 |
+| Random Forest `base` | 0.7391 ± 0.0001 | 16.8 | 53.8 |
+| Random Forest `bosque-grande` | 0.7441 ± 0.0001 | 41.4 | 99.1 |
+
+*P2 (balanced accuracy de validación, mayor es mejor)*
+
+| Candidato | Balanced accuracy | Entrenamiento (s) | Inferencia (ms) |
+| --- | --- | --- | --- |
+| Baseline clase mayoritaria | 0.3333 ± 0.0000 | 0.7 | 0.08 |
+| Árbol balanceado `muy-profundo` | 0.6401 ± 0.0002 | 8.8 | 1.5 |
+| Árbol balanceado `simple` | 0.6445 ± 0.0000 | 6.1 | 1.6 |
+| Árbol balanceado `base` | 0.6720 ± 0.0000 | 7.3 | 1.4 |
+| Random Forest class weight `muy-profundo` | 0.5808 ± 0.0022 | 15.8 | 78.5 |
+| Random Forest class weight `base` | 0.6985 ± 0.0006 | 18.6 | 73.2 |
+| **Random Forest class weight `bosque-grande`** | **0.7014 ± 0.0007** | 39.5 | 132.3 |
+
+*P3 (silhouette, mayor es mejor)*
+
+| Candidato | Silhouette | Entrenamiento (s) | Inferencia (ms) |
+| --- | --- | --- | --- |
+| Baseline cuantiles de volumen | 0.0801 ± 0.0000 | 0.001 | 0.6 |
+| **K-Means `k3`** | **0.3079 ± 0.0729** | 0.025 | 13.0 |
+| K-Means `k5` | 0.1939 ± 0.0069 | 0.024 | 14.0 |
+| K-Means `k7` | 0.2308 ± 0.0003 | 0.025 | 13.0 |
+
+**Modelo elegido por pregunta.** P1: HistGradientBoosting Poisson `base`. P2: Random Forest con class weight `bosque-grande`. P3: K-Means con `k=3`.
+
+**Consideraciones críticas.**
+
+- **P1.** HistGradientBoosting `base` supera a las variantes de Random Forest en MAE y además es el más barato en inferencia (8.8 ms frente a 54 a 99 ms). La ventaja sobre `lento-lr0.05` es de solo 0.004, pero se sostiene en las 5 semillas (las desviaciones son 0.0006 y 0.0003) y `base` entrena y predice más rápido. Frente al baseline estacional, el MAE baja de 0.891 a 0.721 (una mejora de alrededor de 19 %).
+- **P2.** `bosque-grande` supera a `base` por 0.003 de balanced accuracy; la diferencia es mayor que la dispersión entre semillas (0.0007), así que es real pero pequeña. Cuesta el doble en entrenamiento (39.5 s frente a 18.6 s) y casi el doble en inferencia (132 ms frente a 73 ms). El árbol balanceado `base` queda 0.03 por debajo, pero entrena y predice mucho más rápido (1.4 ms por cada 1000 filas). Se elige el bosque porque la meta es detectar vaciados y saturaciones, que son raros; si el costo de inferencia fuera una restricción, el árbol sería una alternativa razonable.
+- **P3.** `k3` es el mejor en promedio, pero es el candidato menos estable: su silhouette cambia entre semillas (desviación de 0.073) y el 0.3396 de la semilla 42 es un valor favorable frente a la media de 0.308. Aun así, incluso su peor caso razonable queda por encima de `k7` (0.231) y de `k5` (0.194), cuya variación es mínima. El silhouette mide separación estadística, no utilidad para Planeación; por eso cada run guarda el mapa y los perfiles por grupo en `plots/`. Elegir `k3` también resulta más sencillo de operar que manejar 5 o 7 perfiles.
+- **Costo.** P1 y P3 no tienen un costo relevante. En P2 el Random Forest es el candidato más caro, pero entrena en menos de un minuto y predice 1000 filas en 0.13 s, lo que es manejable para un uso por hora.
+- **Límites.** La comparación usa una sola partición temporal (validación en mayo, prueba en junio), así que no captura estacionalidad anual. La estabilidad se mide solo respecto a la semilla de los modelos, no a otros periodos.
