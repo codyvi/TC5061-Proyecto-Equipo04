@@ -423,7 +423,7 @@ Administrar los modelos seleccionados del proyecto MiBici mediante MLflow Model 
 | Pregunta | Nombre en Model Registry | Modelo seleccionado | Estado |
 |---|---|---|---|
 | P1 – Demanda | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` | Versión 1, alias `champion`, carga verificada |
-| P2 – Riesgo | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | Pendiente de localizar el artefacto ganador |
+| P2 – Riesgo | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | Versión 1, alias `champion`, carga verificada |
 | P3 – Grupos | `mibici-equipo04-p3-grupos` | K-Means `k3` | Versión 1, alias `champion`, carga verificada |
 
 ### Registro y trazabilidad
@@ -482,13 +482,30 @@ modelo_p3 = mlflow.pyfunc.load_model(
 
 Ambas operaciones devolvieron objetos `mlflow.pyfunc.PyFuncModel`, confirmando que los modelos registrados pueden recuperarse correctamente.
 
-### Situación pendiente de P2
+### Registro completado de P2
 
-El análisis de estabilidad identifica a Random Forest class weight `bosque-grande` como ganador de P2, con una balanced accuracy promedio de 0.7014 en cinco semillas.
+El modelo ganador de P2 es Random Forest class weight
+`bosque-grande`, con balanced accuracy promedio de 0.7014
+en cinco semillas.
 
-Sin embargo, el artefacto y la corrida original de esa configuración no se localizaron en las bases de datos locales revisadas (`mlflow.db` y `mlflow_revision.db`).
+Se ejecutó nuevamente el entrenamiento de P2 y se obtuvo
+una balanced accuracy de validación de 0.7016.
 
-Para evitar registrar un modelo diferente del seleccionado, P2 permanece pendiente. Una vez recuperado el artefacto ganador y verificada su procedencia, podrá registrarse con el nombre `mibici-equipo04-p2-riesgo` y recibir el alias `champion`.
+El modelo quedó registrado en MLflow Model Registry con:
+
+- Nombre: `mibici-equipo04-p2-riesgo`
+- Versión: 1
+- Alias: `champion`
+- Run ID: `a67a4eb903044e5fbaab292eaa3fc048`
+- Data version: `bd6802fef84e`
+- Git commit de entrenamiento: `a8934eebb30956e3b6bab26e279abd8cba34a6c0`
+
+Se verificó su carga mediante:
+
+`mlflow.pyfunc.load_model("models:/mibici-equipo04-p2-riesgo@champion")`
+
+La carga fue exitosa y devolvió un objeto
+`mlflow.pyfunc.PyFuncModel`.
 
 ### Consideraciones de reproducibilidad
 

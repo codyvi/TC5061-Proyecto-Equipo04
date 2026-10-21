@@ -29,7 +29,7 @@ MODELOS = {
     "p2": {
         "nombre_registry": "mibici-equipo04-p2-riesgo",
         "modelo_esperado": "random-forest-class-weight-bosque-grande",
-        "run_id": None,
+        "run_id": "a67a4eb903044e5fbaab292eaa3fc048",
         "descripcion": (
             "Modelo de clasificacion de riesgo de vaciado o "
             "saturacion de estaciones. Random Forest balanceado."
