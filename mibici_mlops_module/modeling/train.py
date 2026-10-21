@@ -233,6 +233,265 @@ class BaseTrainer(ABC):
 
     # ---- flujo común ----------------------------------------------------------------
     def ejecutar(self) -> list[dict]:
+        """Entrena todos los candidatos, los anida y guarda todos los artefactos de la Actividad 6."""
+        import mlflow
+        import mlflow.data
+        
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
+        self.cargar()
+        resultados = []
+        
+        if hasattr(self, "train") and hasattr(self, "objetivo"):
+            dataset_mlflow = mlflow.data.from_pandas(self.train, targets=self.objetivo, name=f"{self.pregunta}_entrenamiento")
+        else:
+            dataset_mlflow = mlflow.data.from_pandas(self.X, name=f"{self.pregunta}_entrenamiento")
+
+        # 1. CORRIDA PADRE (Búsqueda - Nested Runs)
+        nombre_padre = f"{self.pregunta.upper()}-Busqueda-{self.tarea}"
+        with mlflow.start_run(run_name=nombre_padre):
+            
+            # Etiquetas padre
+            mlflow.set_tags({
+                "equipo": EQUIPO, 
+                "question": self.pregunta.upper(), 
+                "stage_of_work": "search"
+            })
+            
+            for c in self.candidatos():
+                nombre_run = f"{self.pregunta.upper()}-{self.tarea}-{c.nombre}"
+                
+                # 2. CORRIDAS HIJAS (nested=True)
+                with mlflow.start_run(run_name=nombre_run, nested=True) as run:
+                    logger.info(f"[{nombre_run}] entrenando")
+                    
+                    # Etiquetas hijas
+                    mlflow.set_tags({
+                        "equipo": EQUIPO,
+                        "question": self.pregunta.upper(),
+                        "model_family": c.nombre.split('-')[0], 
+                        "stage_of_work": "baseline" if c.baseline else "candidate",
+                        **self.git,
+                    })
+                    
+                    # Parámetros
+                    mlflow.log_params({
+                        "data_version": self.manifest["data_version"],
+                        "seed": self.seed,
+                        "fraccion_entrenamiento": self.fraccion,
+                        "features": ",".join(self.features),
+                        **self.parametros_datos(),
+                        **{f"modelo.{k}": v for k, v in c.params.items()},
+                    })
+                    
+                    # Registrar conjunto de entrenamiento
+                    mlflow.log_input(dataset_mlflow, context="training")
+                    
+                    # Entrenar y evaluar
+                    self.ajustar(c.modelo)
+                    metricas = self.evaluar(c)
+                    mlflow.log_metrics(metricas)
+                    
+                    # Guardar Gráficas en 'plots/'
+                    for archivo, fig in self.graficar(c).items():
+                        mlflow.log_figure(fig, f"plots/{archivo}")
+                        plt.close(fig)
+                        
+                    # Guardar Configuración y Manifiesto
+                    mlflow.log_artifact(str(PROJ_ROOT / "data" / "manifest.json"), "data")
+                    mlflow.log_artifact(str(self.config_path), "config")
+                    
+                    # Guardar Modelo con Firma Y Ejemplo
+                    X, y = self.muestra_firma()
+                    X = X.astype({col: "float64" for col in X.select_dtypes("integer")})
+                    
+                    mlflow.sklearn.log_model(
+                        c.modelo,
+                        name="modelo",
+                        signature=infer_signature(X, y),
+                        input_example=X.head(3),
+                        serialization_format="skops",
+                        skops_trusted_types=get_untrusted_types(data=skops_dumps(c.modelo)),
+                    )
+                    
+                    resultados.append({"candidato": c, "metricas": metricas, "run_id": run.info.run_id})
+                    logger.info(f"[{nombre_run}] {self.criterio} = {metricas.get(self.criterio):.4f}")
+                    
+        self.guardar_mejor(resultados)
+        self.finalizar(resultados)
+        return resultados
+        """Entrena todos los candidatos, los anida y guarda todos los artefactos de la Actividad 6."""
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
+        self.cargar()
+        resultados = []
+        
+        # Preparamos el dataset para mlflow.log_input (Punto 2 de tu rúbrica)
+        import mlflow.data
+        if hasattr(self, "train") and hasattr(self, "objetivo"):
+            dataset_mlflow = mlflow.data.from_pandas(self.train, targets=self.objetivo, name=f"{self.pregunta}_entrenamiento")
+        else:
+            dataset_mlflow = mlflow.data.from_pandas(self.X, name=f"{self.pregunta}_entrenamiento")
+
+        # 1. CORRIDA PADRE (Búsqueda - Nested Runs)
+        nombre_padre = f"{self.pregunta.upper()}-Busqueda-{self.tarea}"
+        with mlflow.start_run(run_name=nombre_padre):
+            
+            # Etiquetas padre
+            mlflow.set_tags({
+                "equipo": EQUIPO, 
+                "question": self.pregunta.upper(), 
+                "stage_of_work": "search"
+            })
+            
+            for c in self.candidatos():
+                nombre_run = f"{self.pregunta.upper()}-{self.tarea}-{c.nombre}"
+                
+                # 2. CORRIDAS HIJAS (nested=True)
+                with mlflow.start_run(run_name=nombre_run, nested=True) as run:
+                    logger.info(f"[{nombre_run}] entrenando")
+                    
+                    # Etiquetas hijas (Punto 1 de tu rúbrica)
+                    mlflow.set_tags({
+                        "equipo": EQUIPO,
+                        "question": self.pregunta.upper(),
+                        "model_family": c.nombre.split('-')[0], 
+                        "stage_of_work": "baseline" if c.baseline else "candidate",
+                        **self.git,
+                    })
+                    
+                    # Parámetros
+                    mlflow.log_params({
+                        "data_version": self.manifest["data_version"],
+                        "seed": self.seed,
+                        "fraccion_entrenamiento": self.fraccion,
+                        "features": ",".join(self.features),
+                        **self.parametros_datos(),
+                        **{f"modelo.{k}": v for k, v in c.params.items()},
+                    })
+                    
+                    # Registrar el conjunto de entrenamiento (Punto 2 de tu rúbrica)
+                    mlflow.log_input(dataset_mlflow, context="training")
+                    
+                    # Entrenar y evaluar
+                    self.ajustar(c.modelo)
+                    metricas = self.evaluar(c)
+                    mlflow.log_metrics(metricas)
+                    
+                    # Guardar Gráficas en 'plots/' (Punto 3 de tu rúbrica)
+                    for archivo, fig in self.graficar(c).items():
+                        mlflow.log_figure(fig, f"plots/{archivo}")
+                        plt.close(fig)
+                        
+                    # Guardar Configuración y Manifiesto (Punto 3 de tu rúbrica)
+                    mlflow.log_artifact(str(PROJ_ROOT / "data" / "manifest.json"), "data")
+                    mlflow.log_artifact(str(self.config_path), "config")
+                    
+                    # Guardar Modelo con Firma Y Ejemplo (Punto 2 de tu rúbrica)
+                    X, y = self.muestra_firma()
+                    X = X.astype({col: "float64" for col in X.select_dtypes("integer")})
+                    
+                    mlflow.sklearn.log_model(
+                        c.modelo,
+                        name="modelo",
+                        signature=infer_signature(X, y),
+                        input_example=X.head(3),  # <-- El ejemplo de entrada exigido
+                        serialization_format="skops",
+                        skops_trusted_types=get_untrusted_types(data=skops_dumps(c.modelo)),
+                    )
+                    
+                    resultados.append({"candidato": c, "metricas": metricas, "run_id": run.info.run_id})
+                    logger.info(f"[{nombre_run}] {self.criterio} = {metricas.get(self.criterio):.4f}")
+                    
+        self.guardar_mejor(resultados)
+        self.finalizar(resultados)
+        return resultados
+        """Entrena todos los candidatos, los anida y guarda todos los artefactos de la Actividad 6."""
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_EQUIPO)
+        self.cargar()
+        resultados = []
+        
+        # Preparamos el dataset para mlflow.log_input (Punto 2 de tu rúbrica)
+        import mlflow.data
+        if hasattr(self, "train") and hasattr(self, "objetivo"):
+            dataset_mlflow = mlflow.data.from_pandas(self.train, targets=self.objetivo, name=f"{self.pregunta}_entrenamiento")
+        else:
+            dataset_mlflow = mlflow.data.from_pandas(self.X, name=f"{self.pregunta}_entrenamiento")
+
+        # 1. CORRIDA PADRE (Búsqueda - Nested Runs)
+        nombre_padre = f"{self.pregunta.upper()}-Busqueda-{self.tarea}"
+        with mlflow.start_run(run_name=nombre_padre):
+            
+            # Etiquetas padre
+            mlflow.set_tags({
+                "equipo": EQUIPO, 
+                "question": self.pregunta.upper(), 
+                "stage_of_work": "search"
+            })
+            
+            for c in self.candidatos():
+                nombre_run = f"{self.pregunta.upper()}-{self.tarea}-{c.nombre}"
+                
+                # 2. CORRIDAS HIJAS (nested=True)
+                with mlflow.start_run(run_name=nombre_run, nested=True) as run:
+                    logger.info(f"[{nombre_run}] entrenando")
+                    
+                    # Etiquetas hijas (Punto 1 de tu rúbrica)
+                    mlflow.set_tags({
+                        "equipo": EQUIPO,
+                        "question": self.pregunta.upper(),
+                        "model_family": c.nombre.split('-')[0], 
+                        "stage_of_work": "baseline" if c.baseline else "candidate",
+                        **self.git,
+                    })
+                    
+                    # Parámetros
+                    mlflow.log_params({
+                        "data_version": self.manifest["data_version"],
+                        "seed": self.seed,
+                        "fraccion_entrenamiento": self.fraccion,
+                        "features": ",".join(self.features),
+                        **self.parametros_datos(),
+                        **{f"modelo.{k}": v for k, v in c.params.items()},
+                    })
+                    
+                    # Registrar el conjunto de entrenamiento (Punto 2 de tu rúbrica)
+                    mlflow.log_input(dataset_mlflow, context="training")
+                    
+                    # Entrenar y evaluar
+                    self.ajustar(c.modelo)
+                    metricas = self.evaluar(c)
+                    mlflow.log_metrics(metricas)
+                    
+                    # Guardar Gráficas en 'plots/' (Punto 3 de tu rúbrica)
+                    for archivo, fig in self.graficar(c).items():
+                        mlflow.log_figure(fig, f"plots/{archivo}")
+                        plt.close(fig)
+                        
+                    # Guardar Configuración y Manifiesto (Punto 3 de tu rúbrica)
+                    mlflow.log_artifact(str(PROJ_ROOT / "data" / "manifest.json"), "data")
+                    mlflow.log_artifact(str(self.config_path), "config")
+                    
+                    # Guardar Modelo con Firma Y Ejemplo (Punto 2 de tu rúbrica)
+                    X, y = self.muestra_firma()
+                    X = X.astype({col: "float64" for col in X.select_dtypes("integer")})
+                    
+                    mlflow.sklearn.log_model(
+                        c.modelo,
+                        name="modelo",
+                        signature=infer_signature(X, y),
+                        input_example=X.head(3),  # <-- El ejemplo de entrada exigido
+                        serialization_format="skops",
+                        skops_trusted_types=get_untrusted_types(data=skops_dumps(c.modelo)),
+                    )
+                    
+                    resultados.append({"candidato": c, "metricas": metricas, "run_id": run.info.run_id})
+                    logger.info(f"[{nombre_run}] {self.criterio} = {metricas.get(self.criterio):.4f}")
+                    
+        self.guardar_mejor(resultados)
+        self.finalizar(resultados)
+        return resultados
         """Entrena todos los candidatos, registra cada uno en MLflow y guarda el mejor.
 
         Cada run lleva las etiquetas `equipo`, `pregunta` y `git_commit`, los parámetros que lo hacen
