@@ -412,3 +412,86 @@ Cada comando crea un run padre de búsqueda (`stage_of_work=search`) y un run hi
 - **P3.** `k3` es el mejor en promedio, pero es el candidato menos estable: su silhouette cambia entre semillas (desviación de 0.073) y el 0.3396 de la semilla 42 es un valor favorable frente a la media de 0.308. Aun así, incluso su peor caso razonable queda por encima de `k7` (0.231) y de `k5` (0.194), cuya variación es mínima. El silhouette mide separación estadística, no utilidad para Planeación; por eso cada run guarda el mapa y los perfiles por grupo en `plots/`. Elegir `k3` también resulta más sencillo de operar que manejar 5 o 7 perfiles.
 - **Costo.** P1 y P3 no tienen un costo relevante. En P2 el Random Forest es el candidato más caro, pero entrena en menos de un minuto y predice 1000 filas en 0.13 s, lo que es manejable para un uso por hora.
 - **Límites.** La comparación usa una sola partición temporal (validación en mayo, prueba en junio), así que no captura estacionalidad anual. La estabilidad se mide solo respecto a la semilla de los modelos, no a otros periodos.
+## Parte C. Model Registry y gestión de modelos en producción
+
+### Objetivo
+
+Administrar los modelos seleccionados del proyecto MiBici mediante MLflow Model Registry, conservando la trazabilidad de los experimentos y permitiendo cargar modelos mediante alias sin depender de números de versión específicos.
+
+### Modelos seleccionados
+
+| Pregunta | Nombre en Model Registry | Modelo seleccionado | Estado |
+|---|---|---|---|
+| P1 – Demanda | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` | Versión 1, alias `champion`, carga verificada |
+| P2 – Riesgo | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | Pendiente de localizar el artefacto ganador |
+| P3 – Grupos | `mibici-equipo04-p3-grupos` | K-Means `k3` | Versión 1, alias `champion`, carga verificada |
+
+### Registro y trazabilidad
+
+El registro se implementó mediante `scripts/registrar_modelos.py`, utilizando MLflow 3.17.1.
+
+El procedimiento identifica la corrida original, verifica que corresponda al modelo esperado y registra una versión en Model Registry.
+
+Cada versión registrada conserva etiquetas de trazabilidad que incluyen:
+
+- `source_run_id`: identificador de la corrida de origen.
+- `git_commit`: commit asociado al entrenamiento.
+- `data_version`: versión de los datos utilizados.
+- `modelo`: nombre del algoritmo y configuración.
+- `question`: pregunta del proyecto.
+
+También se agrega una descripción del propósito de cada modelo.
+
+### Esquema de alias
+
+Se utiliza el alias `champion` para identificar la versión seleccionada para producción.
+
+Este mecanismo permite cambiar la versión utilizada sin modificar el código de inferencia. Cuando un modelo nuevo supere al actual, podrá registrarse como una versión adicional y evaluarse antes de actualizar el alias.
+
+El alias `challenger` queda reservado para futuras versiones candidatas. No se asignó durante esta implementación.
+
+### Ejecución
+
+Con el entorno virtual activado y el servidor MLflow correspondiente disponible:
+
+```bash
+python scripts/registrar_modelos.py --listar
+python scripts/registrar_modelos.py --pregunta p1
+python scripts/registrar_modelos.py --pregunta p3
+```
+
+Estos comandos registran modelos previamente entrenados; no ejecutan nuevamente el entrenamiento.
+
+### Verificación de carga
+
+Se verificó exitosamente la carga de P1 y P3 utilizando sus alias:
+
+```python
+import mlflow
+
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+
+modelo_p1 = mlflow.pyfunc.load_model(
+    "models:/mibici-equipo04-p1-demanda@champion"
+)
+
+modelo_p3 = mlflow.pyfunc.load_model(
+    "models:/mibici-equipo04-p3-grupos@champion"
+)
+```
+
+Ambas operaciones devolvieron objetos `mlflow.pyfunc.PyFuncModel`, confirmando que los modelos registrados pueden recuperarse correctamente.
+
+### Situación pendiente de P2
+
+El análisis de estabilidad identifica a Random Forest class weight `bosque-grande` como ganador de P2, con una balanced accuracy promedio de 0.7014 en cinco semillas.
+
+Sin embargo, el artefacto y la corrida original de esa configuración no se localizaron en las bases de datos locales revisadas (`mlflow.db` y `mlflow_revision.db`).
+
+Para evitar registrar un modelo diferente del seleccionado, P2 permanece pendiente. Una vez recuperado el artefacto ganador y verificada su procedencia, podrá registrarse con el nombre `mibici-equipo04-p2-riesgo` y recibir el alias `champion`.
+
+### Consideraciones de reproducibilidad
+
+El registro realizado corresponde al entorno local de MLflow. Las versiones registradas, sus alias y los artefactos asociados no se transfieren automáticamente al repositorio Git.
+
+Para reproducir el registro en otro entorno se requiere acceso a las corridas y artefactos originales, además de ejecutar el script contra el servidor MLflow correspondiente.

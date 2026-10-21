@@ -11,10 +11,12 @@
 /reports/figures/*
 !/reports/figures/.gitkeep
 
-# MLflow (base de datos de tracking y artefactos locales)
+# MLflow (bases de datos de tracking y artefactos locales)
 mlflow.db
+mlflow_revision.db
 mlruns/
 mlartifacts/
+mlartifacts_revision/
 
 # Mac OS-specific storage files
 .DS_Store
