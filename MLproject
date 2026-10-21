@@ -15,6 +15,7 @@ entry_points:
     parameters:
       question: {type: string, default: ""}   # p1, p2, p3 o todas; vacío = todas
       model: {type: string, default: ""}      # rf, hgb, lr (P1); dt, rf (P2); kmeans (P3); vacío = todos
+      seed: {type: string, default: "42"}     # semilla de los modelos (igual a SEED en config.py)
       # Hiperparámetros: solo aplican a los modelos que los usan
       n_estimators: {type: string, default: ""}
       max_depth: {type: string, default: ""}
@@ -28,7 +29,7 @@ entry_points:
       n_init: {type: string, default: ""}
     command: >-
       python -m mibici_mlops_module.modeling.pipeline
-      --pregunta {question} --modelo {model}
+      --pregunta {question} --modelo {model} --seed {seed}
       --hp n_estimators={n_estimators} --hp max_depth={max_depth}
       --hp min_samples_leaf={min_samples_leaf} --hp max_samples={max_samples}
       --hp learning_rate={learning_rate} --hp max_iter={max_iter}
