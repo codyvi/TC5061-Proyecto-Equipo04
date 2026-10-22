@@ -35,3 +35,9 @@ entry_points:
       --hp learning_rate={learning_rate} --hp max_iter={max_iter}
       --hp max_leaf_nodes={max_leaf_nodes} --hp l2_regularization={l2_regularization}
       --hp k={k} --hp n_init={n_init}
+
+  register:
+    parameters:
+      question: {type: string, default: ""}   # p1, p2, p3 o todas; vacío = todas
+      alias: {type: string, default: "champion"}  # champion (producción) o challenger
+    command: "python -m mibici_mlops_module.modeling.registry --pregunta {question} --alias {alias}"

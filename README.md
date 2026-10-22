@@ -181,6 +181,7 @@ En ambos casos el entorno se crea una sola vez y las siguientes corridas lo reut
 | `ingest` | `mibici_mlops_module.dataset --mlflow` | ninguno: meses, rutas y criterios de limpieza vienen de `config.py` |
 | `features` | `mibici_mlops_module.features` | ninguno |
 | `train` | `mibici_mlops_module.modeling.pipeline` (entrena y evalúa) | `question` (`p1`, `p2`, `p3`; vacío = todas), `model` (ver abajo; vacío = todos los de la pregunta), `seed` (semilla de los modelos; por defecto `42`, el `SEED` de `config.py`), e hiperparámetros: `n_estimators`, `max_depth`, `min_samples_leaf`, `max_samples`, `learning_rate`, `max_iter`, `max_leaf_nodes`, `l2_regularization`, `k`, `n_init` |
+| `register` | `mibici_mlops_module.modeling.registry` (registra el modelo de `models/` en el Model Registry) | `question` (`p1`, `p2`, `p3`; vacío = todas), `alias` (`champion` por defecto, o `challenger`) |
 
 Rutas, fechas y particiones no son parámetros: salen de `config.py`. La semilla sí se puede cambiar con `seed` para medir la estabilidad entre corridas (`-P seed=1`); sin indicarla se usa 42. Un hiperparámetro vacío toma el valor de `configs/hiperparametros.yaml`; si se indica, sustituye al del YAML. Con `model` se entrena solo ese modelo (más los baselines de la pregunta). Sin hiperparámetros se corren todas sus combinaciones del YAML (la búsqueda anidada); con alguno, una sola combinación. Alias de `model`: P1 `rf` (Random Forest), `hgb` (HistGradientBoosting Poisson), `lr` (regresión lineal); P2 `dt` (árbol balanceado), `rf` (Random Forest con class weight); P3 `kmeans`.
 
@@ -412,103 +413,67 @@ Cada comando crea un run padre de búsqueda (`stage_of_work=search`) y un run hi
 - **P3.** `k3` es el mejor en promedio, pero es el candidato menos estable: su silhouette cambia entre semillas (desviación de 0.073) y el 0.3396 de la semilla 42 es un valor favorable frente a la media de 0.308. Aun así, incluso su peor caso razonable queda por encima de `k7` (0.231) y de `k5` (0.194), cuya variación es mínima. El silhouette mide separación estadística, no utilidad para Planeación; por eso cada run guarda el mapa y los perfiles por grupo en `plots/`. Elegir `k3` también resulta más sencillo de operar que manejar 5 o 7 perfiles.
 - **Costo.** P1 y P3 no tienen un costo relevante. En P2 el Random Forest es el candidato más caro, pero entrena en menos de un minuto y predice 1000 filas en 0.13 s, lo que es manejable para un uso por hora.
 - **Límites.** La comparación usa una sola partición temporal (validación en mayo, prueba en junio), así que no captura estacionalidad anual. La estabilidad se mide solo respecto a la semilla de los modelos, no a otros periodos.
-## Parte C. Model Registry y gestión de modelos en producción
+## Model Registry y gestión de modelos en producción
 
 ### Objetivo
 
-Administrar los modelos seleccionados del proyecto MiBici mediante MLflow Model Registry, conservando la trazabilidad de los experimentos y permitiendo cargar modelos mediante alias sin depender de números de versión específicos.
+Administrar los modelos elegidos de cada pregunta con MLflow Model Registry, conservando su linaje y permitiendo cargarlos por alias sin depender de un número de versión.
 
-### Modelos seleccionados
+### Modelos registrados
 
-| Pregunta | Nombre en Model Registry | Modelo seleccionado | Estado |
-|---|---|---|---|
-| P1 – Demanda | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` | Versión 1, alias `champion`, carga verificada |
-| P2 – Riesgo | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | Versión 1, alias `champion`, carga verificada |
-| P3 – Grupos | `mibici-equipo04-p3-grupos` | K-Means `k3` | Versión 1, alias `champion`, carga verificada |
+| Pregunta | Nombre en el registro | Modelo elegido | Alias |
+| --- | --- | --- | --- |
+| P1 (demanda) | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` | `champion` |
+| P2 (riesgo) | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | `champion` |
+| P3 (grupos) | `mibici-equipo04-p3-grupos` | K-Means `k3` | `champion` |
 
-### Registro y trazabilidad
+El nombre sigue el patrón `mibici-<equipo>-<pregunta>-<tarea>`, con el equipo tomado de `config.py`.
 
-El registro se implementó mediante `scripts/registrar_modelos.py`, utilizando MLflow 3.17.1.
+### Cómo se registra
 
-El procedimiento identifica la corrida original, verifica que corresponda al modelo esperado y registra una versión en Model Registry.
-
-Cada versión registrada conserva etiquetas de trazabilidad que incluyen:
-
-- `source_run_id`: identificador de la corrida de origen.
-- `git_commit`: commit asociado al entrenamiento.
-- `data_version`: versión de los datos utilizados.
-- `modelo`: nombre del algoritmo y configuración.
-- `question`: pregunta del proyecto.
-
-También se agrega una descripción del propósito de cada modelo.
-
-### Esquema de alias
-
-Se utiliza el alias `champion` para identificar la versión seleccionada para producción.
-
-Este mecanismo permite cambiar la versión utilizada sin modificar el código de inferencia. Cuando un modelo nuevo supere al actual, podrá registrarse como una versión adicional y evaluarse antes de actualizar el alias.
-
-El alias `challenger` queda reservado para futuras versiones candidatas. No se asignó durante esta implementación.
-
-### Ejecución
-
-Con el entorno virtual activado y el servidor MLflow correspondiente disponible:
+El módulo [`registry.py`](mibici_mlops_module/modeling/registry.py) registra el modelo que está en `models/`, que es el que el entrenamiento eligió por validación. De ese archivo salen la corrida de origen, el commit y la versión de los datos, así que no hay identificadores escritos a mano y un reentrenamiento se registra con el mismo comando. Requiere el servidor de tracking y `MLFLOW_TRACKING_URI` configurados (ver "Servidor de tracking y Model Registry").
 
 ```bash
-python scripts/registrar_modelos.py --listar
-python scripts/registrar_modelos.py --pregunta p1
-python scripts/registrar_modelos.py --pregunta p3
+# P1, P2 y P3 como champion (producción)
+mlflow run . -e register --experiment-name mibici-equipo04
+# o, sin MLflow Project
+python -m mibici_mlops_module.modeling.registry
+python -m mibici_mlops_module.modeling.registry --pregunta p1
+
+# Siguiente mejor versión, sin mover el champion
+python -m mibici_mlops_module.modeling.registry --pregunta p1 --alias challenger
 ```
 
-Estos comandos registran modelos previamente entrenados; no ejecutan nuevamente el entrenamiento.
+Cada versión registrada conserva su linaje:
+
+- **Experimento y corrida de origen:** etiquetas `experiment` y `source_run_id`, además del vínculo de la versión con su corrida.
+- **Código y datos:** `git_commit`, `git_dirty` y `data_version`.
+- **Selección:** `modelo`, `seed`, `criterio` y `valor_criterio` (la métrica de validación con la que se eligió).
+- **Descripción:** el modelo registrado describe la decisión que apoya, y cada versión indica el modelo, su métrica, la versión de los datos y el commit.
+
+El registro es idempotente: si el alias ya apunta a una versión de la misma corrida, no crea otra. Y se rechaza registrar un modelo entrenado con una fracción del entrenamiento (`--fraccion`), porque `models/` se sobrescribe también con las pruebas rápidas.
+
+### Esquema de ciclo de vida: aliases
+
+Se usan **aliases** (`champion` y, opcionalmente, `challenger`) en lugar de las etapas clásicas (`Production`, `Staging`). Las etapas están en desuso en MLflow, y los aliases permiten:
+
+- apuntar a una versión sin cambiar el código de inferencia: se carga `models:/<nombre>@champion`;
+- cambiar de versión, o volver a la anterior, moviendo el alias, sin tocar las versiones;
+- tener más de un alias a la vez (por ejemplo, la versión en producción y la siguiente en evaluación).
+
+Cuando un candidato nuevo supere al `champion`, se registra con `--alias challenger`, se compara, y si gana se vuelve a ejecutar el registro con `champion` para moverle el alias. En esta entrega solo se asignó `champion`.
 
 ### Verificación de carga
 
-Se verificó exitosamente la carga de P1 y P3 utilizando sus alias:
+Después de asignar el alias, el comando carga el modelo por su nombre y alias, y falla si no puede. También se puede comprobar a mano:
 
 ```python
 import mlflow
 
 mlflow.set_tracking_uri("http://127.0.0.1:5000")
-
-modelo_p1 = mlflow.pyfunc.load_model(
-    "models:/mibici-equipo04-p1-demanda@champion"
-)
-
-modelo_p3 = mlflow.pyfunc.load_model(
-    "models:/mibici-equipo04-p3-grupos@champion"
-)
+modelo = mlflow.pyfunc.load_model("models:/mibici-equipo04-p1-demanda@champion")
 ```
 
-Ambas operaciones devolvieron objetos `mlflow.pyfunc.PyFuncModel`, confirmando que los modelos registrados pueden recuperarse correctamente.
+### Reproducibilidad
 
-### Registro completado de P2
-
-El modelo ganador de P2 es Random Forest class weight
-`bosque-grande`, con balanced accuracy promedio de 0.7014
-en cinco semillas.
-
-Se ejecutó nuevamente el entrenamiento de P2 y se obtuvo
-una balanced accuracy de validación de 0.7016.
-
-El modelo quedó registrado en MLflow Model Registry con:
-
-- Nombre: `mibici-equipo04-p2-riesgo`
-- Versión: 1
-- Alias: `champion`
-- Run ID: `a67a4eb903044e5fbaab292eaa3fc048`
-- Data version: `bd6802fef84e`
-- Git commit de entrenamiento: `a8934eebb30956e3b6bab26e279abd8cba34a6c0`
-
-Se verificó su carga mediante:
-
-`mlflow.pyfunc.load_model("models:/mibici-equipo04-p2-riesgo@champion")`
-
-La carga fue exitosa y devolvió un objeto
-`mlflow.pyfunc.PyFuncModel`.
-
-### Consideraciones de reproducibilidad
-
-El registro realizado corresponde al entorno local de MLflow. Las versiones registradas, sus alias y los artefactos asociados no se transfieren automáticamente al repositorio Git.
-
-Para reproducir el registro en otro entorno se requiere acceso a las corridas y artefactos originales, además de ejecutar el script contra el servidor MLflow correspondiente.
+El registro vive en la base de MLflow del entorno donde se ejecuta; las versiones y los alias no se suben a Git (`mlflow.db` está en `.gitignore`). Para reproducirlo en otro entorno hay que entrenar con las instrucciones de las secciones anteriores y ejecutar el registro contra el servidor de ese entorno.
