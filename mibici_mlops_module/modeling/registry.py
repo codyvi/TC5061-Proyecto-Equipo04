@@ -60,6 +60,23 @@ def validar_origen(client: MlflowClient, guardado: ModeloGuardado):
     return run
 
 
+def modelo_de_corrida(client: MlflowClient, run) -> str:
+    """URI `models:/m-…` del modelo `modelo` que `log_model` guardó en la corrida.
+
+    Por qué: desde MLflow 3 `log_model` crea un modelo registrado en el experimento y no deja
+    artefactos en `runs:/<id>/modelo`; registrar desde esa ruta avisa y recurre a este mismo modelo.
+    """
+    encontrados = client.search_logged_models(
+        experiment_ids=[run.info.experiment_id],
+        filter_string="name = 'modelo'",
+        order_by=[{"field_name": "creation_time", "ascending": False}],
+    )
+    for modelo in encontrados:
+        if modelo.source_run_id == run.info.run_id:
+            return f"models:/{modelo.model_id}"
+    raise ValueError(f"La corrida {run.info.run_id} no tiene un modelo 'modelo' registrado")
+
+
 def version_con_alias(client: MlflowClient, nombre: str, alias: str):
     """Versión que hoy tiene el alias, o None si el modelo o el alias no existen."""
     try:
@@ -85,9 +102,9 @@ def registrar(pregunta: str, alias: str = "champion") -> str:
         logger.info(f"[{pregunta}] {nombre} v{actual.version} ya tiene el alias '{alias}'")
         version = actual.version
     else:
-        # `runs:/…/modelo` es el modelo que `ejecutar()` registró con `log_model`: conserva el
-        # vínculo con la corrida (experimento, commit y versión de datos salen de ella)
-        creada = mlflow.register_model(f"runs:/{guardado.run_id}/modelo", nombre)
+        # Modelo que `ejecutar()` registró con `log_model`: conserva el vínculo con la corrida
+        # (experimento, commit y versión de datos salen de ella)
+        creada = mlflow.register_model(modelo_de_corrida(client, run), nombre)
         version = creada.version
         experimento = client.get_experiment(run.info.experiment_id).name
         client.update_registered_model(nombre, DESCRIPCIONES[pregunta])
