@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 from typing import Annotated
 import unicodedata
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from loguru import logger
@@ -90,8 +91,14 @@ def detectar_codificacion(ruta: Path) -> str:
 
 
 def _abrir(url: str):
-    """Abre una URL del portal con un `User-Agent` identificable y un tiempo máximo de espera."""
-    return urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=120)
+    """Abre una URL del portal con un `User-Agent` identificable y un tiempo máximo de espera.
+
+    Por qué solo https: las URL de descarga se extraen del HTML del portal; sin esta validación,
+    un enlace `file://` o de otro esquema haría que `urlopen` leyera archivos locales.
+    """
+    if urlparse(url).scheme != "https":
+        raise ValueError(f"Solo se permiten URL https, no: {url}")
+    return urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=120)  # nosec B310
 
 
 # ---------------------------------------------------------------------------

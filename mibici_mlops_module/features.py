@@ -323,6 +323,15 @@ def construir_p3(m: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Validación
 # ---------------------------------------------------------------------------
+def _exigir(condicion: bool, mensaje: str) -> None:
+    """Lanza `AssertionError` si la condición es falsa.
+
+    Por qué no `assert`: con `python -O` los `assert` se eliminan y la validación no correría.
+    """
+    if not condicion:
+        raise AssertionError(mensaje)
+
+
 def validar_sin_fuga(viajes: pd.DataFrame, p1: pd.DataFrame, n: int = 2000) -> None:
     """Comprueba sobre una muestra de P1 que no haya fuga de información.
 
@@ -334,19 +343,29 @@ def validar_sin_fuga(viajes: pd.DataFrame, p1: pd.DataFrame, n: int = 2000) -> N
     salidas_en = lambda e, h: conteo.get((e, h), 0)
     muestra = p1.sample(min(n, len(p1)), random_state=SEED)
     H = pd.Timedelta(hours=1)
-    assert all(
-        salidas_en(e, h + H) == y
-        for e, h, y in zip(muestra.estacion, muestra.hora_t, muestra[OBJETIVO_P1])
+
+    _exigir(
+        all(
+            salidas_en(e, h + H) == y
+            for e, h, y in zip(muestra.estacion, muestra.hora_t, muestra[OBJETIVO_P1])
+        ),
+        f"{OBJETIVO_P1} no coincide con las salidas de la hora siguiente",
     )
-    assert all(
-        salidas_en(e, h) == x
-        for e, h, x in zip(muestra.estacion, muestra.hora_t, muestra.salidas_t)
+    _exigir(
+        all(
+            salidas_en(e, h) == x
+            for e, h, x in zip(muestra.estacion, muestra.hora_t, muestra.salidas_t)
+        ),
+        "salidas_t no coincide con las salidas de la hora t",
     )
-    assert all(
-        salidas_en(e, h - 167 * H) == x
-        for e, h, x in zip(muestra.estacion, muestra.hora_t, muestra.salidas_lag_168h)
+    _exigir(
+        all(
+            salidas_en(e, h - 167 * H) == x
+            for e, h, x in zip(muestra.estacion, muestra.hora_t, muestra.salidas_lag_168h)
+        ),
+        "salidas_lag_168h no coincide con las salidas de t-167",
     )
-    assert p1.isna().sum().sum() == 0
+    _exigir(p1.isna().sum().sum() == 0, "P1 tiene valores nulos")
 
 
 class FeatureBuilder:
@@ -361,12 +380,15 @@ class FeatureBuilder:
     ) -> dict:
         """Construye P1, P2 y P3, valida que no haya fuga y guarda Parquet y resumen.json."""
         estaciones = sorted(set(viajes["origen_id"]) | set(viajes["destino_id"]))
-        assert (cat.set_index("estacion_id").loc[estaciones, "capacidad"] > 0).all()
+        _exigir(
+            (cat.set_index("estacion_id").loc[estaciones, "capacidad"] > 0).all(),
+            "hay estaciones sin capacidad positiva en el catálogo",
+        )
         m, _ = malla_estacion_hora(viajes, estaciones)
         p1, p2 = construir_p1_p2(m, cat)
         p3 = construir_p3(m)
         validar_sin_fuga(viajes, p1)
-        assert p2.isna().sum().sum() == 0
+        _exigir(p2.isna().sum().sum() == 0, "P2 tiene valores nulos")
 
         output_dir.mkdir(parents=True, exist_ok=True)
         p1.to_parquet(output_dir / "p1_demanda.parquet", index=False)
