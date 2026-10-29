@@ -260,7 +260,7 @@ La rama `main` está protegida por un ruleset de GitHub: nadie sube directo, no 
 1. **Actualizar `main`:** `git switch main && git pull`.
 2. **Crear una rama** por cambio, con prefijo según el tipo: `feat/<tema>` (funcionalidad), `fix/<tema>` (corrección) o `docs/<tema>` (documentación). Ejemplo: `git switch -c feat/refactor`.
 3. **Commits** con el formato `tipo(alcance): descripción en español`, donde el tipo es `feat`, `fix`, `docs`, `test` o `refactor`. Ejemplo: `feat(modeling): entrenamiento y evaluación de P1, P2 y P3 con MLflow`.
-4. **Antes de abrir el PR:** `python -m pytest -q` y `ruff check`. No se suben datos, modelos, `mlflow.db`, `mlruns/` ni `.env`: ya están en `.gitignore`.
+4. **Antes de abrir el PR:** `python -m pytest -q`, `make security` y `ruff check`. No se suben datos, modelos, `mlflow.db`, `mlruns/` ni `.env`: ya están en `.gitignore`.
 5. **Abrir el Pull Request** hacia `main` con un resumen de qué cambia y por qué. Debe revisarlo y aprobarlo al menos otra persona del equipo; quien lo abre no lo aprueba.
 6. **Integrar con *Rebase and merge*** y borrar la rama.
 
@@ -275,7 +275,7 @@ Todos se ejecutan como módulo (`python -m ...`) y aceptan `--help`.
 | `mibici_mlops_module.modeling.pipeline` | Entrena y evalúa de punta a punta, registrando ambos pasos en MLflow. **Es el recomendado.** | `python -m mibici_mlops_module.modeling.pipeline --pregunta p1` |
 | `mibici_mlops_module.modeling.train` | Solo entrena (un run por candidato) y guarda el mejor en `models/`. | `python -m mibici_mlops_module.modeling.train --pregunta p2` |
 | `mibici_mlops_module.modeling.predict` | Genera predicciones con el modelo guardado y las escribe en `data/processed/pX_predicciones.parquet`. | `python -m mibici_mlops_module.modeling.predict --pregunta p1 --conjunto prueba` |
-| `pytest` (carpeta `tests/`) | Pruebas automáticas de `features.py`: rezagos y medias móviles sin fuga del futuro, objetivos en t+1, clases de riesgo según el umbral, partición temporal y validación con muestras pequeñas. No necesitan los datos reales. | `python -m pytest -q` |
+| `pytest` (carpeta `tests/`) | Pruebas unitarias, de reproducibilidad, de calidad de datos (DeepChecks) y de seguridad. Ver [Pruebas y chequeos de seguridad](#pruebas-y-chequeos-de-seguridad). | `python -m pytest -q` |
 
 Opciones de `pipeline` y `train`:
 
@@ -287,6 +287,55 @@ Opciones de `pipeline` y `train`:
 Opciones de `predict`: `--pregunta`, `--conjunto entrenamiento|validacion|prueba` (P1 y P2), `--entrada` y `--salida` (rutas Parquet).
 
 **Hiperparámetros.** `configs/hiperparametros.yaml` define las combinaciones de cada modelo. Cada elemento de la lista es un run; el campo opcional `nombre` forma parte del nombre del run (`P1-demanda-random-forest-<nombre>`) y, si se omite, se arma con los hiperparámetros. Agrega o quita combinaciones y vuelve a correr.
+
+## Pruebas y chequeos de seguridad
+
+Con el entorno `mibici` activado (ver [Entorno virtual](#entorno-virtual)) y desde la raíz del proyecto:
+
+```bash
+python -m pytest -q          # todas las pruebas (≈15 s); equivale a `make test`
+make security                # bandit (código) + pip-audit (dependencias, necesita red)
+```
+
+Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
+
+### Qué cubre cada archivo de `tests/`
+
+| Archivo | Qué verifica |
+| --- | --- |
+| `test_features.py`, `test_features_construccion.py` | Variables sin fuga del futuro: rezagos, medias móviles, objetivos en t+1, clases de riesgo, partición temporal, malla estación × hora (NaN antes de la apertura de una estación), calendario, índice de flujo y perfiles de P3 (estación sin movimientos, sin datos de validación ni prueba). |
+| `test_utilidades.py` | Normalización de nombres de columna, hash SHA-256 y verificación del manifiesto, detección de codificación, hiperparámetros (`parsear_hp`, `etiqueta`) y que solo se descargue por `https`. |
+| `test_reproducibilidad.py`, `test_entrenamiento_reproducible.py` | Misma semilla, mismas predicciones y métricas; con semilla distinta el modelo cambia (control). El segundo archivo usa el `P1Trainer` real y comprueba que solo se usen las variables de `FEATURES_P1`. |
+| `test_deepchecks_datos.py` | Calidad de `data/processed/` con DeepChecks: tipos, nulos (`PercentOfNulls`, `MixedNulls`), duplicados, drift de variables y del objetivo entre entrenamiento y prueba, y particiones sin traslape. Cada chequeo se prueba también con datos sintéticos defectuosos. Se omite si aún no existen las tablas. |
+| `test_seguridad.py` | `.env` y llaves ignorados por Git, sin archivos de credenciales ni secretos en los archivos versionados ni en el historial, configuración leída del entorno y bandit sin hallazgos de severidad alta. |
+| `test_model_registry.py`, `test_data_validation.py`, `test_train_utils.py` | Model Registry y validaciones básicas del pipeline. |
+
+### Seguridad
+
+- **Secretos:** las credenciales van en `.env` (ignorado por Git). `.env.example` es la plantilla que sí se versiona; cópiala a `.env` y llénala. `.gitignore` también cubre `.env.*`, `*.pem`, `*.key`, `*.p12` y `credentials*.json`.
+- **`make security`** corre `bandit -r mibici_mlops_module -ll` (hallazgos de severidad media o alta) y `pip-audit` sobre `requirements.txt`. Ambos se ejecutan siempre y el comando falla si cualquiera reporta algo.
+- Los resultados de la última revisión están en [Hallazgos](#hallazgos-de-las-pruebas-y-la-revisión-de-seguridad).
+
+### Hallazgos de las pruebas y la revisión de seguridad
+
+**Seguridad (ya corregidos)**
+
+| Hallazgo | Herramienta | Corrección |
+| --- | --- | --- |
+| `mlflow 3.17.1` con CVE-2026-53995 | pip-audit | Actualizado a `3.17.2` en `requirements.txt` y `python_env.yaml`. |
+| `urlopen` abría URL extraídas del HTML del portal sin validar el esquema (B310): un enlace `file://` leería archivos locales | bandit | `_abrir` en `dataset.py` solo acepta `https` y lanza `ValueError` en otro caso; hay prueba que lo cubre. |
+| `setuptools<81`, necesario para DeepChecks, tenía CVEs sin corrección en esa rama | pip-audit | Se quitó la dependencia: `tests/_deepchecks_compat.py` simula las dos funciones de `pkg_resources` que DeepChecks usa. |
+
+No se encontraron credenciales en los archivos versionados ni en el historial de Git. Los avisos de severidad baja también se corrigieron:
+
+- **B101:** `validar_sin_fuga` y `FeatureBuilder.build` usaban `assert`, que se elimina con `python -O` y dejaría las validaciones sin ejecutar. Ahora usan `_exigir`, que lanza `AssertionError`; hay una prueba de que detecta una fuga.
+- **B404/B603/B607:** `utils.info_git` resuelve la ruta completa de `git` con `shutil.which` y la llamada a `subprocess` usa argumentos fijos sin shell; B404 (importar `subprocess`) se silencia con `# nosec` y B603 se omite en `[tool.bandit]` de `pyproject.toml`, con la justificación.
+
+**Pruebas**
+
+- **Reproducibilidad con tolerancia:** el Random Forest usa `n_jobs=-1` y los árboles se promedian en un orden que cambia entre hilos, así que las predicciones pueden diferir en ~1e-15 aun con la misma semilla. Las pruebas comparan con tolerancia `1e-9`, no con igualdad exacta.
+- **DeepChecks 0.19.1 está desactualizado:** no importa con NumPy 2 ni con scikit-learn 1.9. `tests/_deepchecks_compat.py` agrega los alias necesarios (`np.Inf`, el scorer `max_error` y `pkg_resources`) y solo se usan chequeos de datos. Si se actualiza NumPy o scikit-learn, hay que volver a verificarlo.
+- **Drift esperado:** `es_semana_santa` y `es_festivo` cambian entre entrenamiento y prueba por diseño (caen solo en enero-abril), por lo que se excluyen del chequeo. Las demás variables tienen un puntaje de drift ≤ 0.052 (umbral: 0.10).
 
 ## Selección del mejor modelo
 
@@ -473,6 +522,9 @@ mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3
 
 # 9. Model Registry: registra el modelo de models/ de P1, P2 y P3 con el alias champion
 mlflow run . -e register --experiment-name mibici-equipo04 --run-name registro-champion
+
+# 10. Verificación: todas las pruebas (unitarias, reproducibilidad, DeepChecks y seguridad)
+python -m pytest tests -v
 ```
 
 Después abre <http://127.0.0.1:5000> y entra al experimento **mibici-equipo04**; los modelos registrados están en la pestaña **Models** (detalle en [Model Registry y gestión de modelos en producción](#model-registry-y-gestión-de-modelos-en-producción)).
@@ -482,4 +534,5 @@ Notas:
 - Entrenar una pregunta sin indicar `model` corre sus baselines y todas las combinaciones de `configs/hiperparametros.yaml` (7 candidatos en P1, 7 en P2 y 4 en P3), anidados bajo un run padre de búsqueda. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento) desde `python -m mibici_mlops_module.modeling.pipeline`.
 - El paso 9 registra lo que haya en `models/`, así que ejecútalo después de entrenar las tres preguntas (o pasa `-P question=p1` para registrar solo una). Es idempotente y rechaza modelos entrenados con `--fraccion`.
 - Conviene hacer `git commit` antes del paso 6: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
+- Las pruebas de DeepChecks necesitan que antes se hayan generado las tablas de `data/processed/` (pasos 6 y 7); si no existen, esas pruebas se omiten.
 - Levanta `mlflow server` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.

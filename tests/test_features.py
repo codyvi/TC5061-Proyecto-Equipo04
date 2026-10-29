@@ -99,3 +99,20 @@ def test_validacion_sin_fuga_acepta_muestras_pequenas():
         'salidas_lag_168h': [0],
     })
     validar_sin_fuga(viajes, p1)
+
+
+def test_validacion_sin_fuga_detecta_fuga_incluso_con_optimizacion():
+    """Falla con AssertionError si el objetivo no son las salidas de t+1 (y no depende de `assert`)."""
+    viajes = pd.DataFrame({
+        'origen_id': [101],
+        'inicio_viaje': [pd.Timestamp('2026-01-01 01:00')],
+    })
+    p1 = pd.DataFrame({
+        'estacion': [101],
+        'hora_t': [pd.Timestamp('2026-01-01 00:00')],
+        'y_salidas_t1': [5],  # debería ser 1
+        'salidas_t': [0],
+        'salidas_lag_168h': [0],
+    })
+    with pytest.raises(AssertionError, match='y_salidas_t1'):
+        validar_sin_fuga(viajes, p1)

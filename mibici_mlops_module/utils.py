@@ -2,7 +2,8 @@
 
 from contextlib import contextmanager
 import os
-import subprocess
+import shutil
+import subprocess  # nosec B404
 
 import mlflow
 import yaml
@@ -19,8 +20,11 @@ def info_git() -> dict[str, str]:
 
     def git(*args: str) -> str:
         """Ejecuta `git <args>` en la raíz del repositorio y devuelve su salida (vacía si falla)."""
+        ejecutable = shutil.which("git")  # ruta completa: evita ejecutar un `git` ajeno al PATH
+        if ejecutable is None:
+            return ""
         return subprocess.run(
-            ["git", *args], cwd=PROJ_ROOT, capture_output=True, text=True, check=False
+            [ejecutable, *args], cwd=PROJ_ROOT, capture_output=True, text=True, check=False
         ).stdout.strip()
 
     return {

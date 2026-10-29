@@ -30,3 +30,8 @@ extend-select = ["I"]  # Add import sorting
 known-first-party = ["mibici_mlops_module"]
 force-sort-within-sections = true
 
+
+[tool.bandit]
+# B603: `utils.info_git` ejecuta `git` con la ruta completa y argumentos fijos definidos en el
+# código, sin shell ni entrada del usuario.
+skips = ["B603"]

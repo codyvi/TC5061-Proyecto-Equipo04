@@ -63,6 +63,22 @@ data: requirements
 	$(PYTHON_INTERPRETER) mibici_mlops_module/dataset.py
 
 
+## Run tests (unitarias, DeepChecks y seguridad)
+.PHONY: test
+test:
+	$(PYTHON_INTERPRETER) -m pytest tests -v
+
+## Security checks: bandit (codigo) y pip-audit (dependencias)
+.PHONY: security
+security:
+	@rc=0; \
+	bandit -c pyproject.toml -r mibici_mlops_module -ll || rc=1; \
+	grep -v -E '^(#|-e|$$)' requirements.txt > .requirements-audit.txt; \
+	pip-audit -r .requirements-audit.txt --no-deps --disable-pip || rc=1; \
+	rm -f .requirements-audit.txt; \
+	exit $$rc
+
+
 #################################################################################
 # Self Documenting Commands                                                     #
 #################################################################################

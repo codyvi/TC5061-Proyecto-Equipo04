@@ -161,8 +161,16 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
+# Environments y secretos (las credenciales van en .env, nunca en el código)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials*.json
 .venv
 env/
 venv/
