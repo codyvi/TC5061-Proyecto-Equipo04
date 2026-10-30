@@ -304,7 +304,7 @@ Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
 | Archivo | Qué verifica |
 | --- | --- |
 | `test_features.py`, `test_features_construccion.py` | Variables sin fuga del futuro: rezagos, medias móviles, objetivos en t+1, clases de riesgo, partición temporal, malla estación × hora (NaN antes de la apertura de una estación), calendario, índice de flujo y perfiles de P3 (estación sin movimientos, sin datos de validación ni prueba). |
-| `test_utilidades.py` | Normalización de nombres de columna, hash SHA-256 y verificación del manifiesto, detección de codificación, hiperparámetros (`parsear_hp`, `etiqueta`) y que solo se descargue por `https`. |
+| `test_utilidades.py`, `test_parsear_hp.py` | Normalización de nombres de columna, hash SHA-256 y verificación del manifiesto, detección de codificación, hiperparámetros (`parsear_hp`, también con listas, diccionarios, `null` y claves repetidas; y `etiqueta`) y que solo se descargue por `https`. |
 | `test_reproducibilidad.py`, `test_entrenamiento_reproducible.py` | Misma semilla, mismas predicciones y métricas; con semilla distinta el modelo cambia (control). El segundo archivo usa el `P1Trainer` real y comprueba que solo se usen las variables de `FEATURES_P1`. |
 | `test_deepchecks_datos.py` | Calidad de `data/processed/` con DeepChecks: tipos, nulos (`PercentOfNulls`, `MixedNulls`), duplicados, drift de variables y del objetivo entre entrenamiento y prueba, y particiones sin traslape. Cada chequeo se prueba también con datos sintéticos defectuosos. Se omite si aún no existen las tablas. |
 | `test_seguridad.py` | `.env` y llaves ignorados por Git, sin archivos de credenciales ni secretos en los archivos versionados ni en el historial, configuración leída del entorno y bandit sin hallazgos de severidad alta. |
@@ -314,7 +314,7 @@ Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
 
 - **Secretos:** las credenciales van en `.env` (ignorado por Git). `.env.example` es la plantilla que sí se versiona; cópiala a `.env` y llénala. `.gitignore` también cubre `.env.*`, `*.pem`, `*.key`, `*.p12` y `credentials*.json`.
 - **`make security`** corre `bandit -r mibici_mlops_module -ll` (hallazgos de severidad media o alta) y `pip-audit` sobre `requirements.txt`. Ambos se ejecutan siempre y el comando falla si cualquiera reporta algo.
-- Los resultados de la última revisión están en [Hallazgos](#hallazgos-de-las-pruebas-y-la-revisión-de-seguridad).
+- Los resultados de la última revisión están en [Hallazgos](#hallazgos-de-las-pruebas-y-la-revisión-de-seguridad) y [Evidencia de ejecución](#evidencia-de-ejecución).
 
 ### Hallazgos de las pruebas y la revisión de seguridad
 
@@ -336,6 +336,53 @@ No se encontraron credenciales en los archivos versionados ni en el historial de
 - **Reproducibilidad con tolerancia:** el Random Forest usa `n_jobs=-1` y los árboles se promedian en un orden que cambia entre hilos, así que las predicciones pueden diferir en ~1e-15 aun con la misma semilla. Las pruebas comparan con tolerancia `1e-9`, no con igualdad exacta.
 - **DeepChecks 0.19.1 está desactualizado:** no importa con NumPy 2 ni con scikit-learn 1.9. `tests/_deepchecks_compat.py` agrega los alias necesarios (`np.Inf`, el scorer `max_error` y `pkg_resources`) y solo se usan chequeos de datos. Si se actualiza NumPy o scikit-learn, hay que volver a verificarlo.
 - **Drift esperado:** `es_semana_santa` y `es_festivo` cambian entre entrenamiento y prueba por diseño (caen solo en enero-abril), por lo que se excluyen del chequeo. Las demás variables tienen un puntaje de drift ≤ 0.052 (umbral: 0.10).
+
+### Evidencia de ejecución
+
+Corrida del 2026-10-30 (Python 3.14.4, entorno `mibici`).
+
+**Pruebas:** `python -m pytest tests -v`
+
+```text
+tests/test_data_validation.py                      3 passed
+tests/test_deepchecks_datos.py                     15 passed
+tests/test_entrenamiento_reproducible.py           5 passed
+tests/test_features.py                             7 passed
+tests/test_features_construccion.py                11 passed
+tests/test_model_registry.py                       9 passed
+tests/test_parsear_hp.py                           2 passed
+tests/test_reproducibilidad.py                     3 passed
+tests/test_seguridad.py                            8 passed
+tests/test_train_utils.py                          3 passed
+tests/test_utilidades.py                           26 passed
+
+============================= 92 passed in 13.98s ==============================
+```
+
+**Análisis de código con bandit:** `bandit -c pyproject.toml -r mibici_mlops_module`
+
+```text
+Test results:
+	No issues identified.
+
+Code scanned:
+	Total lines of code: 2002
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 2
+
+Run metrics:
+	Total issues (by severity):
+		Low: 0
+		Medium: 0
+		High: 0
+```
+
+**Análisis de dependencias con pip-audit:** `make security` (parte de pip-audit)
+
+```text
+No known vulnerabilities found
+```
+
+Antes de las correcciones de la sección anterior, las mismas herramientas reportaban 1 hallazgo medio y 9 bajos en bandit, y CVE-2026-53995 en `mlflow 3.17.1` en pip-audit.
 
 ## Selección del mejor modelo
 
