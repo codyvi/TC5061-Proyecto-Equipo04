@@ -583,3 +583,69 @@ Notas:
 - Conviene hacer `git commit` antes del paso 6: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Las pruebas de DeepChecks necesitan que antes se hayan generado las tablas de `data/processed/` (pasos 6 y 7); si no existen, esas pruebas se omiten.
 - Levanta `mlflow server` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
+
+## Carga de modelos desde MLflow Model Registry
+
+El servicio de inferencia recupera los modelos registrados
+en MLflow mediante su nombre y alias (`champion` o
+`challenger`) o una versión específica.
+
+La implementación se encuentra en:
+
+`mibici_mlops_module/model_loader.py`
+
+### Configuración local
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+```
+
+### Configuración en Docker Desktop
+
+```bash
+MLFLOW_TRACKING_URI=http://host.docker.internal:5000
+```
+
+El servidor MLflow debe aceptar conexiones desde el
+contenedor. Además, los artefactos del modelo deben
+ser accesibles desde ese entorno.
+
+En Docker Engine sobre Linux puede ser necesario
+configurar `host-gateway`.
+
+### Ejemplo de uso
+
+```python
+from mibici_mlops_module.model_loader import cargar_modelo_registry
+
+modelo = cargar_modelo_registry(
+    pregunta="p1",
+    alias="champion"
+)
+
+# También permite seleccionar una versión:
+modelo = cargar_modelo_registry(
+    pregunta="p1",
+    version=1
+)
+```
+
+### Consideraciones
+
+- El modelo debe existir previamente en Model Registry.
+- El alias `champion` debe estar asignado a una versión.
+- No es necesario volver a entrenar para realizar inferencias.
+- La carga se realiza mediante `mlflow.pyfunc.load_model`.
+- La dirección del servidor se obtiene de `MLFLOW_TRACKING_URI`.
+- La imagen Docker no incluye los modelos entrenados.
+
+### Pruebas
+
+```bash
+python -m pytest tests/test_model_loader.py -v
+```
+
+Las pruebas automatizadas validan la construcción de las URI,
+la configuración y el manejo de errores mediante simulaciones.
+La prueba de integración requiere un Registry accesible con
+modelos y artefactos disponibles.
