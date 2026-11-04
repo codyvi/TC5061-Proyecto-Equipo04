@@ -1,29 +1,19 @@
+# Entorno de desarrollo completo. Las dependencias de la API (y sus versiones) viven
+# en requirements-api.txt; aquí solo se agrega lo demás.
+-r requirements-api.txt
+
 # Plantilla CCDS
-loguru==0.7.3
 mkdocs==1.6.1
 pip==26.2.1
-python-dotenv==1.2.4
 ruff==0.17.0
-tqdm==4.70.1
-typer==0.27.3
 
-# Datos (notebook de preparación; pyarrow para leer/escribir Parquet)
-numpy==2.5.4
-pandas==3.0.6
-pyarrow==25.0.1
-
-# Modelado y seguimiento de experimentos
-scikit-learn==1.9.1
-mlflow==3.17.2
-pyyaml==6.0.3
-skops==0.16.0
+# API de inferencia
+httpx==0.28.1  # TestClient de FastAPI en las pruebas
 
 # Notebooks y visualización
 ipykernel==7.4.0
 jupyter==1.1.1
-matplotlib==3.11.2
 seaborn==0.13.2
-scipy==1.18.1
 
 # Pruebas, calidad de datos y seguridad
 pytest==9.1.1

@@ -1,0 +1,24 @@
+# Dependencias mínimas para ejecutar la API en el contenedor (subconjunto de requirements.txt).
+# Las versiones deben coincidir con las de requirements.txt.
+
+# API
+fastapi==0.143.1
+uvicorn==0.54.0
+pydantic==2.14.1
+
+# Carga de modelos desde MLflow y su inferencia
+mlflow==3.17.2
+scikit-learn==1.9.1
+numpy==2.5.4
+pandas==3.0.6
+pyarrow==25.0.1
+pyyaml==6.0.3
+skops==0.16.0
+
+# Importados por mibici_mlops_module (config, features, modeling)
+loguru==0.7.3
+python-dotenv==1.2.4
+tqdm==4.70.1
+typer==0.27.3
+matplotlib==3.11.2
+scipy==1.18.1

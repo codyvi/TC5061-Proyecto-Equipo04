@@ -72,8 +72,8 @@ test:
 .PHONY: security
 security:
 	@rc=0; \
-	bandit -c pyproject.toml -r mibici_mlops_module -ll || rc=1; \
-	grep -v -E '^(#|-e|$$)' requirements.txt > .requirements-audit.txt; \
+	bandit -c pyproject.toml -r mibici_mlops_module app -ll || rc=1; \
+	cat requirements-api.txt requirements.txt | grep -v -E '^(#|-e|-r|$$)' > .requirements-audit.txt; \
 	pip-audit -r .requirements-audit.txt --no-deps --disable-pip || rc=1; \
 	rm -f .requirements-audit.txt; \
 	exit $$rc
