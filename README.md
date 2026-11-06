@@ -335,11 +335,7 @@ No se encontraron credenciales en los archivos versionados ni en el historial de
 
 **Pruebas**
 
-<<<<<<< HEAD
-- **API sin servidor MLflow:** `tests/test_api.py` usa `TestClient` de FastAPI con modelos simulados, y `tests/test_model_loader.py` simula `mlflow.pyfunc.load_model`. Ninguna necesita un Registry accesible. La prueba real contra el Registry se hizo a mano. Esas pruebas con modelos simulados no habrían detectado que MLflow rechaza enteros donde el esquema pide `double`; por eso la API adapta los tipos al esquema del modelo.
-=======
 - **API sin servidor MLflow:** `tests/test_api.py` usa `TestClient` de FastAPI con modelos simulados, y `tests/test_model_loader.py` simula `mlflow.pyfunc.load_model`. Ninguna necesita un Registry accesible. La prueba real contra el Registry y el contenedor se hizo a mano (ver [Contenedor](#contenedor)). Esas pruebas con modelos simulados no habrían detectado que MLflow rechaza enteros donde el esquema pide `double`; por eso la API adapta los tipos al esquema del modelo.
->>>>>>> 8ba6c80 (feat(deploy): agrega Containerfile, .dockerignore y actualiza README con estrategia)
 - **Esquemas ligados a las variables:** una prueba compara los campos de `EntradaP1` y `EntradaP2` con `FEATURES_P1` y `FEATURES_P2`, en el mismo orden, para que la API no se desincronice del entrenamiento.
 - **Reproducibilidad con tolerancia:** el Random Forest usa `n_jobs=-1` y los árboles se promedian en un orden que cambia entre hilos, así que las predicciones pueden diferir en ~1e-15 aun con la misma semilla. Las pruebas comparan con tolerancia `1e-9`, no con igualdad exacta.
 - **DeepChecks 0.19.1 está desactualizado:** no importa con NumPy 2 ni con scikit-learn 1.9. `tests/_deepchecks_compat.py` agrega los alias necesarios (`np.Inf`, el scorer `max_error` y `pkg_resources`) y solo se usan chequeos de datos. Si se actualiza NumPy o scikit-learn, hay que volver a verificarlo.
@@ -654,22 +650,12 @@ modelo = cargar_modelo_registry(
 - La dirección del servidor se obtiene de `MLFLOW_TRACKING_URI`.
 - La imagen Docker no incluye los modelos entrenados: **opción elegida**, el contenedor los recupera del Registry mediante `MLFLOW_TRACKING_URI` (no se empaqueta el modelo descargado).
 
-<<<<<<< HEAD
 #### Pruebas
-=======
-
-### API de inferencia (FastAPI)
-
-[app/main.py](app/main.py) sirve los modelos `champion` de P1 (demanda) y P2 (riesgo) cargados del Model Registry (ver sección anterior). Al arrancar carga ambos; si alguno falla, la API sigue arriba en estado `degradado` y su endpoint responde 503.
->>>>>>> 8ba6c80 (feat(deploy): agrega Containerfile, .dockerignore y actualiza README con estrategia)
 
 ```bash
-mlflow server --backend-store-uri sqlite:///mlflow.db --port 5000     # terminal 1
-export MLFLOW_TRACKING_URI=http://127.0.0.1:5000                      # terminal 2
-uvicorn app.main:app --port 8000
+python -m pytest tests/test_model_loader.py -v
 ```
 
-<<<<<<< HEAD
 Las pruebas automatizadas validan la construcción de las URI,
 la configuración y el manejo de errores mediante simulaciones.
 La prueba de integración requiere un Registry accesible con
@@ -685,8 +671,6 @@ export MLFLOW_TRACKING_URI=http://127.0.0.1:5000                      # terminal
 uvicorn app.main:app --port 8000
 ```
 
-=======
->>>>>>> 8ba6c80 (feat(deploy): agrega Containerfile, .dockerignore y actualiza README con estrategia)
 Variables opcionales: `MODELO_ALIAS` (por defecto `champion`) y `MODELO_VERSION` (tiene prioridad sobre el alias). Documentación interactiva en `http://localhost:8000/docs`.
 
 | Endpoint | Entrada | Salida |
@@ -705,8 +689,6 @@ curl -X POST localhost:8000/predict/p1 -H 'content-type: application/json' -d '{
 ```
 
 Pruebas: `python -m pytest tests/test_api.py -v` (modelos simulados, sin servidor MLflow).
-<<<<<<< HEAD
-=======
 
 
 ### Contenedor
@@ -767,4 +749,3 @@ Se eligió **inferencia en tiempo real** (servicio REST síncrono) por tres razo
 - **Desacople y trazabilidad.** El contenedor no lleva el modelo: lo carga del Registry por alias, así que promover una nueva versión (`champion`) se reduce a reiniciar el contenedor, sin reconstruir la imagen ni reentrenar.
 
 Limitaciones y alternativa. Cada petición debe traer las variables ya calculadas (rezagos, índice de flujo): el servicio no las deriva de los viajes crudos. Para calcular el riesgo de toda la red cada hora, la inferencia **por lotes** con `python -m mibici_mlops_module.modeling.predict` sería más eficiente, y ambas opciones usan los mismos modelos. P3 (tipología) no se sirve en línea porque es un análisis de planeación sin horizonte, que no cambia por petición.
->>>>>>> 8ba6c80 (feat(deploy): agrega Containerfile, .dockerignore y actualiza README con estrategia)

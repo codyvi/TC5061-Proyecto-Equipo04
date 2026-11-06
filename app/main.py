@@ -16,14 +16,13 @@ Endpoints: `GET /health`, `POST /predict/p1` (demanda) y `POST /predict/p2` (rie
 from contextlib import asynccontextmanager
 import os
 from typing import Literal
-
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
-
 from mibici_mlops_module.features import FEATURES_P1, FEATURES_P2
 from mibici_mlops_module.model_loader import cargar_modelo_registry
+import math
 
 PREGUNTAS_SERVIDAS = ("p1", "p2")
 
