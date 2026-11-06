@@ -6,6 +6,9 @@ Variables de entorno:
     MLFLOW_TRACKING_URI  servidor de MLflow (obligatoria; ver `model_loader`)
     MODELO_ALIAS         alias del Registry a cargar (por defecto `champion`)
     MODELO_VERSION       versión específica; tiene prioridad sobre el alias
+    MLFLOW_HTTP_REQUEST_TIMEOUT / _MAX_RETRIES
+                         tiempo límite (10 s) y reintentos (1) de cada llamada a MLflow;
+                         sin esto, un servidor inalcanzable bloquea el arranque varios minutos
 
 Endpoints: `GET /health`, `POST /predict/p1` (demanda) y `POST /predict/p2` (riesgo).
 """
@@ -118,6 +121,10 @@ class Salud(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Carga los modelos del Registry al arrancar. Si uno falla, la API arranca sin él (503)."""
+    # Con los valores por defecto de MLflow (120 s y 7 reintentos) un servidor caído deja el
+    # arranque colgado minutos; así la API falla rápido y queda `degradado`
+    os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "10")
+    os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "1")
     alias = os.getenv("MODELO_ALIAS", "champion")
     version = os.getenv("MODELO_VERSION") or None
     app.state.modelos = {}
