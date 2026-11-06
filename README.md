@@ -57,6 +57,8 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
 │   └── manifest.json  <- Versionado de datos (sha256, tamaño, registros y data_version);
 │                         único archivo de data/ que se sube a Git.
 │
+├── app                <- API de inferencia (FastAPI): app/main.py
+│
 ├── configs            <- Hiperparámetros de los modelos (hiperparametros.yaml)
 │
 ├── docs               <- Proyecto mkdocs por defecto; ver www.mkdocs.org
@@ -131,7 +133,7 @@ Si `python3 -m venv` falla en WSL con un error de `ensurepip`, instala antes `su
 - Activar: `source mibici/bin/activate` (el prompt muestra `(mibici)`).
 - Desactivar: `deactivate`.
 - Notebooks: elige el kernel **Python (mibici)** en VS Code o en `jupyter lab`.
-- Nueva dependencia: `pip install paquete` y agrégala a `requirements.txt`.
+- Nueva dependencia: `pip install paquete` y agrégala a `requirements.txt` (o a `requirements-api.txt` si la API la necesita; `requirements.txt` lo incluye con `-r`).
 - Si VS Code no detecta el entorno, usa *Python: Select Interpreter* y apunta a `mibici/bin/python`.
 
 ## Datos
@@ -304,7 +306,7 @@ Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
 | Archivo | Qué verifica |
 | --- | --- |
 | `test_features.py`, `test_features_construccion.py` | Variables sin fuga del futuro: rezagos, medias móviles, objetivos en t+1, clases de riesgo, partición temporal, malla estación × hora (NaN antes de la apertura de una estación), calendario, índice de flujo y perfiles de P3 (estación sin movimientos, sin datos de validación ni prueba). |
-| `test_utilidades.py` | Normalización de nombres de columna, hash SHA-256 y verificación del manifiesto, detección de codificación, hiperparámetros (`parsear_hp`, `etiqueta`) y que solo se descargue por `https`. |
+| `test_utilidades.py`, `test_parsear_hp.py` | Normalización de nombres de columna, hash SHA-256 y verificación del manifiesto, detección de codificación, hiperparámetros (`parsear_hp`, también con listas, diccionarios, `null` y claves repetidas; y `etiqueta`) y que solo se descargue por `https`. |
 | `test_reproducibilidad.py`, `test_entrenamiento_reproducible.py` | Misma semilla, mismas predicciones y métricas; con semilla distinta el modelo cambia (control). El segundo archivo usa el `P1Trainer` real y comprueba que solo se usen las variables de `FEATURES_P1`. |
 | `test_deepchecks_datos.py` | Calidad de `data/processed/` con DeepChecks: tipos, nulos (`PercentOfNulls`, `MixedNulls`), duplicados, drift de variables y del objetivo entre entrenamiento y prueba, y particiones sin traslape. Cada chequeo se prueba también con datos sintéticos defectuosos. Se omite si aún no existen las tablas. |
 | `test_seguridad.py` | `.env` y llaves ignorados por Git, sin archivos de credenciales ni secretos en los archivos versionados ni en el historial, configuración leída del entorno y bandit sin hallazgos de severidad alta. |
@@ -314,7 +316,7 @@ Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
 
 - **Secretos:** las credenciales van en `.env` (ignorado por Git). `.env.example` es la plantilla que sí se versiona; cópiala a `.env` y llénala. `.gitignore` también cubre `.env.*`, `*.pem`, `*.key`, `*.p12` y `credentials*.json`.
 - **`make security`** corre `bandit -r mibici_mlops_module -ll` (hallazgos de severidad media o alta) y `pip-audit` sobre `requirements.txt`. Ambos se ejecutan siempre y el comando falla si cualquiera reporta algo.
-- Los resultados de la última revisión están en [Hallazgos](#hallazgos-de-las-pruebas-y-la-revisión-de-seguridad).
+- Los resultados de la última revisión están en [Hallazgos](#hallazgos-de-las-pruebas-y-la-revisión-de-seguridad) y [Evidencia de ejecución](#evidencia-de-ejecución).
 
 ### Hallazgos de las pruebas y la revisión de seguridad
 
@@ -333,9 +335,60 @@ No se encontraron credenciales en los archivos versionados ni en el historial de
 
 **Pruebas**
 
+- **API sin servidor MLflow:** `tests/test_api.py` usa `TestClient` de FastAPI con modelos simulados, y `tests/test_model_loader.py` simula `mlflow.pyfunc.load_model`. Ninguna necesita un Registry accesible. La prueba real contra el Registry y el contenedor se hizo a mano (ver [Contenedor](#contenedor)). Esas pruebas con modelos simulados no habrían detectado que MLflow rechaza enteros donde el esquema pide `double`; por eso la API adapta los tipos al esquema del modelo.
+- **Esquemas ligados a las variables:** una prueba compara los campos de `EntradaP1` y `EntradaP2` con `FEATURES_P1` y `FEATURES_P2`, en el mismo orden, para que la API no se desincronice del entrenamiento.
 - **Reproducibilidad con tolerancia:** el Random Forest usa `n_jobs=-1` y los árboles se promedian en un orden que cambia entre hilos, así que las predicciones pueden diferir en ~1e-15 aun con la misma semilla. Las pruebas comparan con tolerancia `1e-9`, no con igualdad exacta.
 - **DeepChecks 0.19.1 está desactualizado:** no importa con NumPy 2 ni con scikit-learn 1.9. `tests/_deepchecks_compat.py` agrega los alias necesarios (`np.Inf`, el scorer `max_error` y `pkg_resources`) y solo se usan chequeos de datos. Si se actualiza NumPy o scikit-learn, hay que volver a verificarlo.
 - **Drift esperado:** `es_semana_santa` y `es_festivo` cambian entre entrenamiento y prueba por diseño (caen solo en enero-abril), por lo que se excluyen del chequeo. Las demás variables tienen un puntaje de drift ≤ 0.052 (umbral: 0.10).
+
+### Evidencia de ejecución
+
+Corrida del 2026-11-04 (Python 3.14.4, entorno `mibici`).
+
+**Pruebas:** `python -m pytest tests -v`
+
+```text
+tests/test_api.py                                  12 passed
+tests/test_data_validation.py                      3 passed
+tests/test_deepchecks_datos.py                     15 passed
+tests/test_entrenamiento_reproducible.py           5 passed
+tests/test_features.py                             7 passed
+tests/test_features_construccion.py                11 passed
+tests/test_model_loader.py                         5 passed
+tests/test_model_registry.py                       9 passed
+tests/test_parsear_hp.py                           2 passed
+tests/test_reproducibilidad.py                     3 passed
+tests/test_seguridad.py                            8 passed
+tests/test_train_utils.py                          3 passed
+tests/test_utilidades.py                           26 passed
+
+============================= 109 passed in 13.67s ==============================
+```
+
+**Análisis de código con bandit:** `bandit -c pyproject.toml -r mibici_mlops_module app`
+
+```text
+Test results:
+	No issues identified.
+
+Code scanned:
+	Total lines of code: 2172
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 2
+
+Run metrics:
+	Total issues (by severity):
+		Low: 0
+		Medium: 0
+		High: 0
+```
+
+**Análisis de dependencias con pip-audit:** `make security` (parte de pip-audit)
+
+```text
+No known vulnerabilities found
+```
+
+Antes de las correcciones de la sección anterior, las mismas herramientas reportaban 1 hallazgo medio y 9 bajos en bandit, y CVE-2026-53995 en `mlflow 3.17.1` en pip-audit.
 
 ## Selección del mejor modelo
 
@@ -536,3 +589,163 @@ Notas:
 - Conviene hacer `git commit` antes del paso 6: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Las pruebas de DeepChecks necesitan que antes se hayan generado las tablas de `data/processed/` (pasos 6 y 7); si no existen, esas pruebas se omiten.
 - Levanta `mlflow server` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
+
+## Empaquetado y despliegue con Docker
+
+### Carga de modelos desde MLflow Model Registry
+
+El servicio de inferencia recupera los modelos registrados
+en MLflow mediante su nombre y alias (`champion` o
+`challenger`) o una versión específica.
+
+La implementación se encuentra en:
+
+`mibici_mlops_module/model_loader.py`
+
+#### Configuración local
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+```
+
+#### Configuración en Docker Desktop
+
+```bash
+MLFLOW_TRACKING_URI=http://host.docker.internal:5000
+```
+
+El servidor MLflow debe aceptar conexiones desde el
+contenedor (`--host 0.0.0.0` y `--allowed-hosts`; el comando
+exacto está en [Contenedor](#contenedor)). Además, los
+artefactos del modelo deben ser accesibles desde ese entorno:
+por eso se usa `mlflow server`, que los sirve por HTTP, y no
+solo la base `sqlite`.
+
+En Docker Engine sobre Linux puede ser necesario
+configurar `host-gateway`.
+
+#### Ejemplo de uso
+
+```python
+from mibici_mlops_module.model_loader import cargar_modelo_registry
+
+modelo = cargar_modelo_registry(
+    pregunta="p1",
+    alias="champion"
+)
+
+# También permite seleccionar una versión:
+modelo = cargar_modelo_registry(
+    pregunta="p1",
+    version=1
+)
+```
+
+#### Consideraciones
+
+- El modelo debe existir previamente en Model Registry.
+- El alias `champion` debe estar asignado a una versión.
+- No es necesario volver a entrenar para realizar inferencias.
+- La carga se realiza mediante `mlflow.pyfunc.load_model`.
+- La dirección del servidor se obtiene de `MLFLOW_TRACKING_URI`.
+- La imagen Docker no incluye los modelos entrenados: **opción elegida**, el contenedor los recupera del Registry mediante `MLFLOW_TRACKING_URI` (no se empaqueta el modelo descargado).
+
+#### Pruebas
+
+```bash
+python -m pytest tests/test_model_loader.py -v
+```
+
+Las pruebas automatizadas validan la construcción de las URI,
+la configuración y el manejo de errores mediante simulaciones.
+La prueba de integración requiere un Registry accesible con
+modelos y artefactos disponibles.
+
+### API de inferencia (FastAPI)
+
+[app/main.py](app/main.py) sirve los modelos `champion` de P1 (demanda) y P2 (riesgo) cargados del Model Registry (ver sección anterior). Al arrancar carga ambos; si alguno falla, la API sigue arriba en estado `degradado` y su endpoint responde 503.
+
+```bash
+mlflow server --backend-store-uri sqlite:///mlflow.db --port 5000     # terminal 1
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000                      # terminal 2
+uvicorn app.main:app --port 8000
+```
+
+Variables opcionales: `MODELO_ALIAS` (por defecto `champion`) y `MODELO_VERSION` (tiene prioridad sobre el alias). Documentación interactiva en `http://localhost:8000/docs`.
+
+| Endpoint | Entrada | Salida |
+| --- | --- | --- |
+| `GET /health` | — | `{"estado": "ok", "modelos_cargados": ["p1", "p2"]}` |
+| `POST /predict/p1` | `EntradaP1`: las 12 variables de `FEATURES_P1` | `{"pred_salidas_t1": 6.07, "modelo": "p1"}` |
+| `POST /predict/p2` | `EntradaP2`: las 18 variables de `FEATURES_P2` | `{"pred_riesgo_t1": "vaciado", "modelo": "p2"}` |
+
+**Validación (Pydantic).** Cada campo tiene tipo y rango (`hora` 0–23, `dia_semana` 0–6, banderas solo 0/1, conteos ≥ 0, coordenadas dentro de Guadalajara, `capacidad` > 0). Faltantes, tipos incorrectos, valores fuera de rango y campos desconocidos devuelven `422` con el detalle, sin llegar al modelo. Una prueba verifica que los esquemas coincidan con `FEATURES_P1`/`FEATURES_P2`.
+
+```bash
+curl -X POST localhost:8000/predict/p1 -H 'content-type: application/json' -d '{
+  "hora": 8, "dia_semana": 1, "es_fin_de_semana": 0, "es_festivo": 0, "es_semana_santa": 0,
+  "latitud": 20.67, "longitud": -103.35, "salidas_t": 5, "salidas_lag_1h": 3,
+  "salidas_lag_24h": 6, "salidas_lag_168h": 4, "salidas_media_24h": 2.5}'
+```
+
+Pruebas: `python -m pytest tests/test_api.py -v` (modelos simulados, sin servidor MLflow).
+
+
+### Contenedor
+
+Motor elegido: **Docker** (Docker Desktop con integración WSL 2). El [Containerfile](Containerfile) es OCI estándar, así que `podman` funciona con los mismos comandos (cambia `docker` por `podman` y `host.docker.internal` por `host.containers.internal`).
+
+La imagen parte de `python:3.12-slim` (la versión con la que se entrenaron los modelos), instala solo [requirements-api.txt](requirements-api.txt), copia `mibici_mlops_module/` y `app/`, y corre como usuario sin privilegios. No incluye datos ni modelos: `.dockerignore` los excluye y la API los recupera del Registry al arrancar (la imagen pesa ~1.3 GB).
+
+**1. Servidor MLflow.** Debe aceptar conexiones del contenedor y el nombre con el que lo alcanza; sin `--allowed-hosts`, MLflow responde 403 a `host.docker.internal` y la API arranca en estado `degradado`:
+
+```bash
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000 \
+  --allowed-hosts 'localhost:*,127.0.0.1:*,host.docker.internal:*,host.containers.internal:*'
+```
+
+**2. Construir la imagen** (desde la raíz del repositorio):
+
+```bash
+docker build -t mibici-api -f Containerfile .
+```
+
+**3. Levantar el contenedor:**
+
+```bash
+docker run -d --name mibici-api -p 8000:8000 \
+  --add-host=host.docker.internal:host-gateway \
+  -e MLFLOW_TRACKING_URI=http://host.docker.internal:5000 mibici-api
+```
+
+`--add-host` solo hace falta en Docker Engine sobre Linux. Variables opcionales: `MODELO_ALIAS` (por defecto `champion`) y `MODELO_VERSION`. Tarda unos segundos en cargar los modelos; `docker ps` muestra `healthy` cuando está listo y `docker logs mibici-api` el detalle de la carga.
+
+**4. Consumir la API:**
+
+```bash
+curl localhost:8000/health
+# {"estado":"ok","modelos_cargados":["p1","p2"]}
+
+curl -X POST localhost:8000/predict/p1 -H 'content-type: application/json' -d '{
+  "hora": 8, "dia_semana": 1, "es_fin_de_semana": 0, "es_festivo": 0, "es_semana_santa": 0,
+  "latitud": 20.67, "longitud": -103.35, "salidas_t": 5, "salidas_lag_1h": 3,
+  "salidas_lag_24h": 6, "salidas_lag_168h": 4, "salidas_media_24h": 2.5}'
+# {"pred_salidas_t1":6.066885951011208,"modelo":"p1"}
+
+curl -X POST localhost:8000/predict/p1 -H 'content-type: application/json' -d '{"hora": 99}'
+# 422: detalle de los campos fuera de rango y faltantes
+```
+
+Detener y borrar: `docker stop mibici-api && docker rm mibici-api`.
+
+**Verificación realizada.** Se construyó la imagen, se levantó el contenedor contra el servidor MLflow local y quedó `healthy`; `/health` devolvió `ok` con ambos modelos, `/predict/p1` respondió `6.07` salidas, `/predict/p2` respondió `vaciado` y una entrada inválida respondió 422.
+
+### Estrategia de despliegue: inferencia en tiempo real
+
+Se eligió **inferencia en tiempo real** (servicio REST síncrono) por tres razones:
+
+- **Uso de las predicciones.** Operaciones y Logística deciden durante el día (cuántas bicicletas llevar, qué estaciones visitar primero) con el estado de la última hora. Una consulta por estación y hora, con respuesta inmediata, encaja mejor que esperar un proceso nocturno.
+- **Modelos ligeros.** P1 y P2 son modelos de scikit-learn; la inferencia tarda milisegundos por cada 1000 filas (ver `reports/estabilidad.csv`), por lo que un servicio sencillo basta y no requiere GPU ni colas.
+- **Desacople y trazabilidad.** El contenedor no lleva el modelo: lo carga del Registry por alias, así que promover una nueva versión (`champion`) se reduce a reiniciar el contenedor, sin reconstruir la imagen ni reentrenar.
+
+Limitaciones y alternativa. Cada petición debe traer las variables ya calculadas (rezagos, índice de flujo): el servicio no las deriva de los viajes crudos. Para calcular el riesgo de toda la red cada hora, la inferencia **por lotes** con `python -m mibici_mlops_module.modeling.predict` sería más eficiente, y ambas opciones usan los mismos modelos. P3 (tipología) no se sirve en línea porque es un análisis de planeación sin horizonte, que no cambia por petición.
