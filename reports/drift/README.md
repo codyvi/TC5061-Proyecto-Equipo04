@@ -65,3 +65,42 @@ un error de datos.
 
 - Es drift de variables de entrada; no mide degradación del desempeño del modelo (eso requiere el objetivo observado).
 - El umbral 0.1 es el predeterminado de Evidently, no calibrado para MiBici.
+## Interpretación de resultados de Data Drift (Punto 3)
+
+### Análisis del modelo P1: Predicción de demanda
+
+El modelo P1 presentó drift en 2 de sus 12 variables (16.7 %). La primera, `es_semana_santa`, registró una distancia Jensen-Shannon de 0.196, lo que se explica por las diferencias de calendario entre los periodos de entrenamiento y prueba. Este cambio no constituye, por sí mismo, evidencia de un problema en el modelo.
+
+La segunda variable, `salidas_media_24h`, presentó una distancia Wasserstein normalizada de 0.108, ligeramente superior al umbral de 0.1. Este resultado indica una modificación en la distribución de la demanda reciente de bicicletas, que podría relacionarse con cambios estacionales y patrones de movilidad.
+
+Esta variable merece especial atención porque representa el comportamiento reciente de uso del sistema y podría afectar la precisión de las predicciones. Sin embargo, para determinar si existe una degradación real, es necesario comparar métricas de desempeño como MAE y RMSE entre los periodos.
+
+### Análisis del modelo P2: Predicción de riesgo
+
+El modelo P2 presentó drift en 1 de sus 18 variables (5.6 %), correspondiente a `es_semana_santa`, con una distancia Jensen-Shannon de 0.196.
+
+Este resultado se interpreta principalmente como un cambio esperado del calendario. Las variables `indice_flujo_acum_3h` (0.081) y `es_festivo` (0.080) permanecieron por debajo del umbral establecido.
+
+Por lo tanto, los resultados no muestran un cambio generalizado en las variables de entrada del modelo P2. No obstante, la estabilidad de las distribuciones no garantiza que el desempeño predictivo permanezca constante.
+
+### Implicaciones para los modelos
+
+Los resultados sugieren que el modelo P1 requiere mayor seguimiento que P2, debido al cambio detectado en una variable relacionada directamente con la demanda reciente.
+
+En ambos modelos, el drift asociado a Semana Santa debe interpretarse considerando el contexto temporal de los datos, evitando confundir cambios esperados del calendario con errores de captura o degradación del modelo.
+
+El análisis realizado mide cambios en las distribuciones de las variables de entrada, pero no demuestra una pérdida de precisión predictiva.
+
+### Recomendaciones
+
+1. Mantener el monitoreo periódico de las variables de entrada mediante Evidently.
+2. Priorizar el seguimiento de `salidas_media_24h` en P1 y verificar si su cambio persiste en nuevos periodos.
+3. Comparar MAE y RMSE de P1 y las métricas de clasificación correspondientes a P2 utilizando datos etiquetados.
+4. Evaluar el reentrenamiento únicamente si se confirma una degradación sostenida del desempeño.
+5. Incorporar comparaciones entre periodos estacionales equivalentes para distinguir cambios esperados de anomalías relevantes.
+
+### Conclusión
+
+El monitoreo evidencia una estabilidad general de las variables de entrada de ambos modelos, con cambios puntuales asociados al calendario y al comportamiento reciente de la demanda.
+
+Se recomienda mantener los modelos actuales bajo observación y priorizar la evaluación de desempeño de P1 antes de tomar decisiones de reentrenamiento. Esta recomendación es provisional y deberá complementarse con los resultados de las pruebas A/B.
