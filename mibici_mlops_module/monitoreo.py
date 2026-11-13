@@ -13,8 +13,8 @@ cambio de temporada (secas -> lluvias, fin de ciclo escolar) es visible.
 """
 
 import json
-import re
 from pathlib import Path
+import re
 
 from loguru import logger
 import pandas as pd
