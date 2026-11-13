@@ -11,7 +11,7 @@
 
 ## Propósito
 
-El principal costo operativo de un sistema de bicicleta pública son las estaciones vacías o llenas, que obligan a rebalancear con camionetas. Este proyecto construye, con datos abiertos de MiBici (Guadalajara), una base **reproducible** de experimentos de aprendizaje automático para apoyar esa operación: ingesta versionada de los datos, variables sin fuga de información, modelos con *baseline* y seguimiento completo de cada experimento en MLflow.
+El principal costo operativo de un sistema de bicicleta pública son las estaciones vacías o llenas, que obligan a rebalancear con camionetas. Este proyecto construye, con datos abiertos de MiBici (Guadalajara), una base **reproducible** de experimentos de aprendizaje automático para apoyar esa operación: ingesta versionada de los datos, variables sin fuga de información, modelos con *baseline*, seguimiento completo de cada experimento en MLflow, monitoreo de *data drift* con Evidently y comparación (A/B testing) de versiones del modelo en el Model Registry.
 
 ## Las tres preguntas
 
@@ -78,6 +78,8 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
 │   └── arquitectura_mibici.png  <- Diagrama de arquitectura
 │
 ├── reports            <- Análisis generados en HTML, PDF, LaTeX, etc.
+│   ├── ab_testing     <- A/B testing de P1: resultados, gráfica y recomendación (README.md)
+│   ├── drift          <- Reportes de Evidently (HTML, JSON, PNG), desempeño vs. drift y README.md
 │   └── figures        <- Gráficas y figuras generadas para los reportes
 │
 ├── requirements.txt   <- Dependencias con versión fija para reproducir el entorno
@@ -97,10 +99,15 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
     │
     ├── modeling
     │   ├── __init__.py
+    │   ├── ab_testing.py       <- Versiones alternativas de P1 y A/B testing contra el champion
     │   ├── baseline.py         <- Baselines propios y guardado/carga de modelos (joblib)
+    │   ├── drift_desempeno.py  <- Liga el drift de las entradas con el error del champion
     │   ├── pipeline.py         <- Entrena y evalúa de punta a punta, registrando ambos en MLflow
     │   ├── predict.py          <- Predictores OOP (P1Predictor, P2Predictor, P3Predictor)
+    │   ├── registry.py         <- Registro de modelos y aliases en el Model Registry
     │   └── train.py            <- Entrenadores OOP (P1Trainer, P2Trainer, P3Trainer) con MLflow
+    │
+    ├── monitoreo.py            <- Reporte de data drift con Evidently (referencia vs. actual)
     │
     ├── plots.py                <- Código para crear visualizaciones
     │
@@ -277,6 +284,9 @@ Todos se ejecutan como módulo (`python -m ...`) y aceptan `--help`.
 | `mibici_mlops_module.modeling.pipeline` | Entrena y evalúa de punta a punta, registrando ambos pasos en MLflow. **Es el recomendado.** | `python -m mibici_mlops_module.modeling.pipeline --pregunta p1` |
 | `mibici_mlops_module.modeling.train` | Solo entrena (un run por candidato) y guarda el mejor en `models/`. | `python -m mibici_mlops_module.modeling.train --pregunta p2` |
 | `mibici_mlops_module.modeling.predict` | Genera predicciones con el modelo guardado y las escribe en `data/processed/pX_predicciones.parquet`. | `python -m mibici_mlops_module.modeling.predict --pregunta p1 --conjunto prueba` |
+| `mibici_mlops_module.monitoreo` | Compara los datos de entrenamiento (ene-abr) contra junio con Evidently y genera `drift_p1` y `drift_p2` (`.html`, `.json` y `.png`) en `reports/drift/`. No requiere el servidor de MLflow. | `python -m mibici_mlops_module.monitoreo` |
+| `mibici_mlops_module.modeling.drift_desempeno` | Mide si el drift de las entradas explica el aumento del error del champion (P1 por tramos de `salidas_media_24h`; P2 con las métricas de mayo y junio). | `python -m mibici_mlops_module.modeling.drift_desempeno` |
+| `mibici_mlops_module.modeling.ab_testing` | Entrena y registra las alternativas de P1 (`challenger` y `challenger-hp`), las compara con el champion en junio y guarda el reporte. Con `--promover` mueve el alias si gana alguna. | `python -m mibici_mlops_module.modeling.ab_testing` |
 | `pytest` (carpeta `tests/`) | Pruebas unitarias, de reproducibilidad, de calidad de datos (DeepChecks) y de seguridad. Ver [Pruebas y chequeos de seguridad](#pruebas-y-chequeos-de-seguridad). | `python -m pytest -q` |
 
 Opciones de `pipeline` y `train`:
@@ -474,7 +484,7 @@ Administrar los modelos elegidos de cada pregunta con MLflow Model Registry, con
 
 | Pregunta | Nombre en el registro | Modelo elegido | Alias |
 | --- | --- | --- | --- |
-| P1 (demanda) | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` | `champion` |
+| P1 (demanda) | `mibici-equipo04-p1-demanda` | HistGradientBoosting Poisson `base` (v1); alternativas v2 y v3 | `champion` (v1), `challenger` (v2), `challenger-hp` (v3) |
 | P2 (riesgo) | `mibici-equipo04-p2-riesgo` | Random Forest class weight `bosque-grande` | `champion` |
 | P3 (grupos) | `mibici-equipo04-p3-grupos` | K-Means `k3` | `champion` |
 
@@ -506,13 +516,13 @@ El registro es idempotente: si el alias ya apunta a una versión de la misma cor
 
 ### Esquema de ciclo de vida: aliases
 
-Se usan **aliases** (`champion` y, opcionalmente, `challenger`) en lugar de las etapas clásicas (`Production`, `Staging`). Las etapas están en desuso en MLflow, y los aliases permiten:
+Se usan **aliases** (`champion`, `challenger`, `challenger-hp` y `anterior`) en lugar de las etapas clásicas (`Production`, `Staging`). Las etapas están en desuso en MLflow, y los aliases permiten:
 
 - apuntar a una versión sin cambiar el código de inferencia: se carga `models:/<nombre>@champion`;
 - cambiar de versión, o volver a la anterior, moviendo el alias, sin tocar las versiones;
 - tener más de un alias a la vez (por ejemplo, la versión en producción y la siguiente en evaluación).
 
-Cuando un candidato nuevo supere al `champion`, se registra con `--alias challenger`, se compara, y si gana se vuelve a ejecutar el registro con `champion` para moverle el alias. En esta entrega solo se asignó `champion`.
+Cuando un candidato nuevo supere al `champion`, se registra con `--alias challenger`, se compara, y si gana se vuelve a ejecutar el registro con `champion` para moverle el alias. Las alternativas de P1 se registran y comparan con `modeling.ab_testing` (ver [Versión alternativa y A/B testing](#versión-alternativa-y-ab-testing)); con `--promover`, el alias `champion` pasa a la ganadora y la versión anterior queda con el alias `anterior`. P2 y P3 solo tienen `champion`.
 
 ### Verificación de carga
 
@@ -528,6 +538,62 @@ modelo = mlflow.pyfunc.load_model("models:/mibici-equipo04-p1-demanda@champion")
 ### Reproducibilidad
 
 El registro vive en la base de MLflow del entorno donde se ejecuta; las versiones y los alias no se suben a Git (`mlflow.db` está en `.gitignore`). Para reproducirlo en otro entorno hay que entrenar con las instrucciones de [Ejecución de principio a fin](#ejecución-de-principio-a-fin) y ejecutar el registro contra el servidor de ese entorno.
+
+## Monitoreo de data drift
+
+Con [Evidently](https://www.evidentlyai.com/) se compara lo que el modelo vio al entrenar con un periodo posterior, para saber si las entradas cambiaron y si ese cambio afecta el desempeño. Detalle, reportes interactivos y gráficas en [`reports/drift/`](reports/drift/README.md).
+
+| Conjunto | Periodo | Filas | Origen |
+| --- | --- | --- | --- |
+| **Referencia** | 7 ene – 30 abr 2026 | 999,024 | Datos de entrenamiento |
+| **Actual** | 1 – 30 jun 2026 | 279,312 | Mes posterior más reciente de los datos abiertos; simula producción |
+
+Junio se eligió y no mayo porque es el periodo más tardío, deja un mes de separación e incluye un cambio de temporada real (lluvias, fin del ciclo escolar); mayo ya es la validación. La API no registra peticiones, así que no hay tráfico real. Se comparan las variables de entrada de P1 y P2 sobre una muestra de 50,000 filas por conjunto (con ~1M contra ~280k filas casi todo saldría "significativo"). P3 queda fuera: no tiene dimensión temporal.
+
+```bash
+python -m mibici_mlops_module.monitoreo                  # reportes de Evidently en reports/drift/ (~15 s)
+python -m mibici_mlops_module.modeling.drift_desempeno   # ¿el drift explica el error? (requiere el servidor de MLflow)
+```
+
+**Resultados** (distancias de Wasserstein normalizada y Jensen-Shannon, umbral 0.1):
+
+| | P1 | P2 |
+| --- | --- | --- |
+| Variables con drift | 2 de 12 | 1 de 18 |
+| Valores nulos | 0 | 0 |
+| Columnas constantes | 2 | 2 |
+
+- `es_semana_santa` (0.196): efecto de calendario esperado; en junio siempre vale 0.
+- `salidas_media_24h` en P1 (0.108): apenas sobre el umbral; es la señal con más interés.
+- **El drift casi no explica el deterioro.** El MAE de P1 subió 9 % de mayo a junio, pero menos del 2 % de ese aumento viene del cambio en la entrada, y la mayor parte es escala: la demanda subió 7.6 % y el MAE relativo solo 1.3 %. P2 empeoró levemente, sobre todo en `saturacion` (recall de 0.702 a 0.664).
+
+## Versión alternativa y A/B testing
+
+Para P1 se registraron dos alternativas como nuevas versiones de `mibici-equipo04-p1-demanda`; cada una cambia **un solo factor** respecto al `champion`, para saber qué aporta cada cambio. Todas se evalúan sobre las mismas 279,312 filas de junio, que ninguna vio al entrenar.
+
+| Versión | Alias | Datos de entrenamiento | Hiperparámetros | MAE | RMSE |
+| --- | --- | --- | --- | --- | --- |
+| v1 | `champion` | ene – abr | `base` | **0.7859** | 1.4464 |
+| v2 | `challenger` | ene – **may** | los mismos | 0.7840 (−0.25 %) | 1.4885 (**+2.9 %**) |
+| v3 | `challenger-hp` | ene – abr | `lento-lr0.05` | 0.7873 (+0.17 %) | 1.3951 (−3.5 %) |
+
+![A/B testing de P1](reports/ab_testing/ab_p1.png)
+
+**Decisión: se queda v1 como `champion`.** Una alternativa debía bajar el MAE (la métrica con la que el proyecto elige modelos), no empeorar el RMSE más de 1 % y tener un IC de 95 % de la diferencia diaria de MAE que excluyera el 0. v2 baja el MAE, pero falla más en los picos de demanda (RMSE); v3 mejora los picos, pero su MAE no se distingue del ruido. Ninguna supera a v1 en ambas métricas. Detalle estadístico en [`reports/ab_testing/`](reports/ab_testing/README.md).
+
+**Continuous Training.** No conviene automatizarlo por ahora: el drift es leve, no explica el error, y ni actualizar datos ni cambiar hiperparámetros mejoró el modelo. Se propone revisar (y reentrenar como en v2) cuando ocurra alguno de estos casos; los umbrales son una propuesta, no están calibrados:
+
+1. Más de la mitad de las variables de P1 con drift, o `salidas_media_24h` con distancia > 0.2.
+2. El MAE relativo semanal (MAE / demanda media), con resultado observado, supera en más de 10 % al de validación (0.649).
+3. Entra una temporada nueva completa o cambia la red (estaciones nuevas, tarifas).
+
+```bash
+# requiere el servidor de MLflow y MLFLOW_TRACKING_URI
+python -m mibici_mlops_module.modeling.ab_testing             # registra v2 y v3, compara y guarda el reporte
+python -m mibici_mlops_module.modeling.ab_testing --promover  # además mueve champion si gana una alternativa
+```
+
+Alcance: solo P1. P2 (riesgo) y P3 no se reentrenaron. El A/B es *offline* (misma data de junio para todas las versiones), porque la API no registra peticiones y no hay tráfico dividido en producción.
 
 ## Ejecución de principio a fin
 
@@ -576,7 +642,14 @@ mlflow run . -e train --experiment-name mibici-equipo04 -P question=p3
 # 9. Model Registry: registra el modelo de models/ de P1, P2 y P3 con el alias champion
 mlflow run . -e register --experiment-name mibici-equipo04 --run-name registro-champion
 
-# 10. Verificación: todas las pruebas (unitarias, reproducibilidad, DeepChecks y seguridad)
+# 10. Data drift: reportes de Evidently y desempeño vs. drift (Evidently ya está en requirements.txt)
+python -m mibici_mlops_module.monitoreo
+python -m mibici_mlops_module.modeling.drift_desempeno
+
+# 11. A/B testing de P1: registra las alternativas (challenger y challenger-hp) y las compara con el champion
+python -m mibici_mlops_module.modeling.ab_testing
+
+# 12. Verificación: todas las pruebas (unitarias, reproducibilidad, DeepChecks y seguridad)
 python -m pytest tests -v
 ```
 
@@ -586,6 +659,7 @@ Notas:
 
 - Entrenar una pregunta sin indicar `model` corre sus baselines y todas las combinaciones de `configs/hiperparametros.yaml` (7 candidatos en P1, 7 en P2 y 4 en P3), anidados bajo un run padre de búsqueda. Para una prueba rápida usa `--fraccion 0.1` (10 % del entrenamiento) desde `python -m mibici_mlops_module.modeling.pipeline`.
 - El paso 9 registra lo que haya en `models/`, así que ejecútalo después de entrenar las tres preguntas (o pasa `-P question=p1` para registrar solo una). Es idempotente y rechaza modelos entrenados con `--fraccion`.
+- Los pasos 10 y 11 necesitan el champion registrado (paso 9) y las tablas de `data/processed/`. El paso 11 reentrena dos modelos de P1 (unos segundos cada uno) y es idempotente: si los alias `challenger` y `challenger-hp` ya existen, no vuelve a entrenar (usa `--forzar` para hacerlo).
 - Conviene hacer `git commit` antes del paso 6: cada run guarda el commit con el que se ejecutó (`git_commit`) y marca `git_dirty=true` si hay cambios sin confirmar.
 - Las pruebas de DeepChecks necesitan que antes se hayan generado las tablas de `data/processed/` (pasos 6 y 7); si no existen, esas pruebas se omiten.
 - Levanta `mlflow server` desde la raíz del repositorio: `mlflow.db` se crea ahí y la ruta `sqlite:///mlflow.db` es relativa.
