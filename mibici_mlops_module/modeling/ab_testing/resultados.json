@@ -1,0 +1,59 @@
+{
+  "evaluacion": "junio 2026 (prueba), mismas filas para todas las versiones",
+  "filas": 279312,
+  "versiones": {
+    "champion": {
+      "version": "1",
+      "mae": 0.7859181893349579,
+      "rmse": 1.4463590285760861
+    },
+    "challenger": {
+      "version": "2",
+      "mae": 0.7839536902291165,
+      "rmse": 1.4884874864923616
+    },
+    "challenger-hp": {
+      "version": "3",
+      "mae": 0.7872609998775789,
+      "rmse": 1.3950643279568455
+    }
+  },
+  "comparaciones": {
+    "challenger": {
+      "mejora_mae_pct": 0.24996229028669825,
+      "cambio_rmse_pct": 2.9127247857504868,
+      "dif_mae_diaria_media": 0.001974194425112008,
+      "dif_mae_diaria_ic95": [
+        0.00019679948811368098,
+        0.0037042900481475357
+      ],
+      "dias_gana": 20,
+      "dias_totales": 30,
+      "cumple": {
+        "baja_mae": true,
+        "rmse_no_empeora_1pct": false,
+        "ic95_excluye_0": true
+      },
+      "gana": false
+    },
+    "challenger-hp": {
+      "mejora_mae_pct": -0.170858819765618,
+      "cambio_rmse_pct": -3.546470800527257,
+      "dif_mae_diaria_media": -0.0013208649981005423,
+      "dif_mae_diaria_ic95": [
+        -0.00324211153517155,
+        0.0005612803787723974
+      ],
+      "dias_gana": 11,
+      "dias_totales": 30,
+      "cumple": {
+        "baja_mae": false,
+        "rmse_no_empeora_1pct": true,
+        "ic95_excluye_0": false
+      },
+      "gana": false
+    }
+  },
+  "decision": "champion",
+  "criterio": "Una alternativa reemplaza al champion solo si baja el MAE, su RMSE no empeora más de 1 % y el intervalo de 95 % de la diferencia diaria de MAE excluye el 0. El MAE es la métrica con la que el proyecto elige modelos en validación."
+}
