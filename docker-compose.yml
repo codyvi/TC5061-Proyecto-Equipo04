@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  mlflow-server:
+    image: python:3.12-slim
+    container_name: mibici-mlflow-server
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    command: >
+      bash -c "pip install mlflow &&
+               mlflow server --host 0.0.0.0 --port 5000 
+               --backend-store-uri sqlite:///mlflow/mlflow.db 
+               --allowed-hosts '*' 
+               --default-artifact-root /mlflow/artifacts"
+    networks:
+      - mibici-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: mibici-api-service
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+    depends_on:
+      - mlflow-server
+    networks:
+      - mibici-net
+
+volumes:
+  mlflow_data:
+
+networks:
+  mibici-net:
+    driver: bridge
