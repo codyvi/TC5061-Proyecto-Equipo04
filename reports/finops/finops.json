@@ -1,0 +1,99 @@
+{
+  "peticiones_totales": 1107,
+  "rps_prueba": 9.29,
+  "latencia_media_ms": 86.7,
+  "p95_ms": 160.0,
+  "cpu_media_carga_pct_de_1_vcpu": 112.1,
+  "cpu_pico_pct": 263.62,
+  "mem_media_mib": 394.5,
+  "mem_pico_mib": 397.5,
+  "supuestos": {
+    "horas_mes": 730,
+    "spot_descuento": 0.65,
+    "reservada_descuento": 0.4
+  },
+  "escenarios": [
+    {
+      "instancia": "t3.small (2 vCPU, 2 GiB)",
+      "modalidad": "on-demand",
+      "usd_hora": 0.0208,
+      "usd_mes": 15.18,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.5,
+      "usd_por_millon_a_carga_de_prueba": 0.62
+    },
+    {
+      "instancia": "t3.small (2 vCPU, 2 GiB)",
+      "modalidad": "reservada 1 año",
+      "usd_hora": 0.0125,
+      "usd_mes": 9.11,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.3,
+      "usd_por_millon_a_carga_de_prueba": 0.37
+    },
+    {
+      "instancia": "t3.small (2 vCPU, 2 GiB)",
+      "modalidad": "spot",
+      "usd_hora": 0.0073,
+      "usd_mes": 5.31,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.17,
+      "usd_por_millon_a_carga_de_prueba": 0.22
+    },
+    {
+      "instancia": "t3.medium (2 vCPU, 4 GiB)",
+      "modalidad": "on-demand",
+      "usd_hora": 0.0416,
+      "usd_mes": 30.37,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 1.0,
+      "usd_por_millon_a_carga_de_prueba": 1.24
+    },
+    {
+      "instancia": "t3.medium (2 vCPU, 4 GiB)",
+      "modalidad": "reservada 1 año",
+      "usd_hora": 0.025,
+      "usd_mes": 18.22,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.6,
+      "usd_por_millon_a_carga_de_prueba": 0.75
+    },
+    {
+      "instancia": "t3.medium (2 vCPU, 4 GiB)",
+      "modalidad": "spot",
+      "usd_hora": 0.0146,
+      "usd_mes": 10.63,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.35,
+      "usd_por_millon_a_carga_de_prueba": 0.44
+    },
+    {
+      "instancia": "t3.large (2 vCPU, 8 GiB)",
+      "modalidad": "on-demand",
+      "usd_hora": 0.0832,
+      "usd_mes": 60.74,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 1.99,
+      "usd_por_millon_a_carga_de_prueba": 2.49
+    },
+    {
+      "instancia": "t3.large (2 vCPU, 8 GiB)",
+      "modalidad": "reservada 1 año",
+      "usd_hora": 0.0499,
+      "usd_mes": 36.44,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 1.2,
+      "usd_por_millon_a_carga_de_prueba": 1.49
+    },
+    {
+      "instancia": "t3.large (2 vCPU, 8 GiB)",
+      "modalidad": "spot",
+      "usd_hora": 0.0291,
+      "usd_mes": 21.26,
+      "capacidad_req_s": 12,
+      "usd_por_millon_a_capacidad": 0.7,
+      "usd_por_millon_a_carga_de_prueba": 0.87
+    }
+  ],
+  "capacidad_1_vcpu_req_s": 8
+}

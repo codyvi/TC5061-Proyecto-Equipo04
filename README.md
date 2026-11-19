@@ -45,6 +45,9 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
 ├── LICENSE            <- Licencia de código abierto
 ├── Makefile           <- Comandos de conveniencia, como `make data` o `make train`
 ├── README.md          <- README principal para quien use este proyecto
+├── docker-compose.yml <- Orquestación de MLflow y la API
+├── locustfile.py      <- Escenario de la prueba de carga
+├── analisis_finops.py <- Gráficas de Locust y costo por inferencia
 ├── data
 │   ├── external       <- Datos de fuentes externas
 │   ├── interim        <- Datos intermedios ya transformados (viajes_2026_01..06.parquet,
@@ -80,6 +83,9 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
 ├── reports            <- Análisis generados en HTML, PDF, LaTeX, etc.
 │   ├── ab_testing     <- A/B testing de P1: resultados, gráfica y recomendación (README.md)
 │   ├── drift          <- Reportes de Evidently (HTML, JSON, PNG), desempeño vs. drift y README.md
+│   ├── locust         <- Prueba de carga: CSV, HTML y gráficas
+│   ├── recursos       <- Consumo de CPU y RAM (docker stats) durante la prueba
+│   ├── finops         <- Cálculo de costo por inferencia (JSON y gráfica)
 │   └── figures        <- Gráficas y figuras generadas para los reportes
 │
 ├── requirements.txt   <- Dependencias con versión fija para reproducir el entorno
@@ -272,6 +278,84 @@ La rama `main` está protegida por un ruleset de GitHub: nadie sube directo, no 
 4. **Antes de abrir el PR:** `python -m pytest -q`, `make security` y `ruff check`. No se suben datos, modelos, `mlflow.db`, `mlruns/` ni `.env`: ya están en `.gitignore`.
 5. **Abrir el Pull Request** hacia `main` con un resumen de qué cambia y por qué. Debe revisarlo y aprobarlo al menos otra persona del equipo; quien lo abre no lo aprueba.
 6. **Integrar con *Rebase and merge*** y borrar la rama.
+
+## Orquestación, CI/CD, pruebas de carga y FinOps
+
+### Levantar el sistema con Docker Compose
+
+[docker-compose.yml](docker-compose.yml) levanta el servidor de MLflow (`mlflow-server`, puerto 5000, con volumen `mlflow_data`) y la API (`api`, puerto 8000), que espera a que MLflow esté sano antes de arrancar. Con un solo comando:
+
+```bash
+docker compose up -d --build     # levanta MLflow y la API
+docker compose ps                # ambos deben quedar "healthy"
+docker compose logs -f api
+docker compose down              # detiene (agrega -v para borrar el volumen de MLflow)
+```
+
+Con `podman-compose` los comandos son los mismos. El Registry del volumen empieza vacío: registra los modelos (pasos 8–9 de [Ejecución de principio a fin](#ejecución-de-principio-a-fin)) con `MLFLOW_TRACKING_URI=http://localhost:5000` y reinicia la API (`docker compose restart api`) para que los cargue; mientras no existan, responde en estado `degradado`.
+
+### Pipeline de CI (GitHub Actions)
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) se ejecuta en cada `push` a `main` y en cada *pull request*:
+
+1. **pruebas**: Python 3.12, instala `requirements.txt` y corre `python -m pytest -q`.
+2. **imagen** (solo si pasan las pruebas): valida `docker-compose.yml`, construye la imagen del [Containerfile](Containerfile) con Buildx y comprueba que la app se importa en el contenedor. En los *push* a `main` además publica la imagen en GitHub Container Registry (`ghcr.io/<owner>/mibici-api`, etiquetas `latest` y el SHA del commit); en los pull requests solo la construye.
+
+Local: `python -m pytest -q` y `docker build -t mibici-api -f Containerfile .`.
+
+### Pruebas de carga con Locust
+
+```bash
+pip install -r requirements-loadtest.txt
+docker compose up -d --build        # con los modelos registrados
+locust -f locustfile.py --host http://localhost:8000 --headless -u 20 -r 2 -t 2m \
+  --csv reports/locust/prueba_20_usuarios --html reports/locust/prueba_20_usuarios.html
+```
+
+Mientras corre, en otra terminal: `./monitorear_recursos.sh` (muestrea `docker stats` cada 5 s hacia `reports/recursos/`; por defecto mide `mibici-api-service`; acepta otro nombre como argumento) y `python generar_graficas_recursos.py`. Después, `python analisis_finops.py` genera las gráficas de latencia, req/s y error y el cálculo de costo.
+
+### Resultados de la prueba de carga
+
+Escenario: 20 usuarios concurrentes, 2 minutos, una réplica de la API en Docker; cada usuario espera 1–3 s y alterna `/predict/p1` y `/predict/p2`. Datos crudos en `reports/locust/`.
+
+| Endpoint | Peticiones | Fallos | Media (ms) | p50 | p95 | p99 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST /predict/p1` | 540 | 0 | 118 | 110 | 190 | 270 |
+| `POST /predict/p2` | 567 | 0 | 57 | 50 | 94 | 150 |
+| **Agregado** | **1107** | **0** | **87** | **84** | **160** | **200** |
+
+~9.3 peticiones/s sostenidas y 0 % de errores. La latencia se estabiliza al terminar la subida de usuarios (~10 s) y P1 es ~2× más lento que P2. El servicio no se saturó, así que la prueba no revela su límite real.
+
+![Gráficas Locust](reports/locust/prueba_20_usuarios_graficas.png)
+
+### Uso de recursos
+
+Medido con `docker stats` cada 5 s: CPU ~0.2 % en reposo, **~112 % de un núcleo en promedio bajo carga** (pico 264 %) y memoria **~395 MiB**, plana y sin fugas. Se dimensiona por CPU, no por RAM.
+
+![CPU](reports/recursos/cpu_20_usuarios.png)
+![RAM](reports/recursos/ram_20_usuarios.png)
+
+### Análisis FinOps
+
+`python analisis_finops.py` produce el cálculo en `reports/finops/finops.json` y la gráfica de costo vs. utilización.
+
+**Supuestos:** precios de referencia AWS us-east-1 on-demand (t3.small 0.0208, t3.medium 0.0416, t3.large 0.0832 USD/h; verificar los vigentes), reservada 1 año −40 %, Spot −65 %, 730 h/mes. A 9.3 req/s la API usó ~1.12 vCPU (~8 req/s por vCPU); con 2 vCPU y 70 % de utilización la capacidad estimada es ~12 req/s por instancia (extrapolación lineal: no se probó la saturación). No incluye red, almacenamiento ni MLflow.
+
+| Instancia | Modalidad | USD/mes | USD por millón de inferencias (a la carga de la prueba) | (a capacidad) |
+| --- | --- | --- | --- | --- |
+| t3.small | on-demand | 15.18 | 0.62 | 0.50 |
+| t3.small | Spot | 5.31 | 0.22 | 0.17 |
+| t3.medium | on-demand | 30.37 | 1.24 | 1.00 |
+| t3.medium | reservada | 18.22 | 0.75 | 0.60 |
+| t3.large | on-demand | 60.74 | 2.49 | 1.99 |
+
+Con la configuración medida (t3.medium on-demand) cada inferencia cuesta **≈ 0.0000012 USD (1.24 USD por millón)**; como solo se usan ~400 MiB, una t3.small basta y lo reduce a ≈ 0.62. El costo por inferencia depende sobre todo de la **utilización**: a 10 % cuesta 10× más que al 100 %.
+
+![Costo vs utilización](reports/finops/costo_vs_utilizacion.png)
+
+**Cómo optimizarlo:** dimensionar por CPU (t3.small); reducir la CPU por petición (limitar hilos con `n_jobs`/`OMP_NUM_THREADS`, modelos más pequeños si el MAE casi no cambia, varias estaciones por petición); caché de predicciones por (estación, hora) con Redis y TTL de 1 h; reservada para la carga base y Spot para réplicas extra; autoescalado por CPU o serverless si la utilización es baja; precalcular la demanda cada hora con un job; límites de recursos por contenedor (ya definidos en compose).
+
+**Limitaciones:** una sola prueba (2 min, 20 usuarios) en WSL2 local, no en una instancia t3, sin saturación; los costos son un orden de magnitud, no un presupuesto.
 
 ## Scripts disponibles
 

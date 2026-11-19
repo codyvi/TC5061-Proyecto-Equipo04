@@ -1,0 +1,3 @@
+# Dependencias para las pruebas de carga y sus gráficas (no van en la imagen de la API).
+locust==2.47.0
+matplotlib==3.11.2
