@@ -106,6 +106,74 @@ def graficar_drift(pregunta: str, salida: Path = DRIFT_DIR, umbral: float = 0.1)
     return ruta
 
 
+# ---------------------------------------------------------------------------
+# Drift sobre el tráfico real de la API (ver `registro_predicciones.py`).
+# Misma referencia (entrenamiento); el conjunto "actual" son las peticiones registradas.
+# ---------------------------------------------------------------------------
+def cargar_conjuntos_produccion(
+    pregunta: str,
+    ruta: Path | None = None,
+    muestra: int = MUESTRA,
+    minimo: int = 50,
+    processed_dir: Path = PROCESSED_DATA_DIR,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Devuelve (referencia, actual) con actual = peticiones de `pregunta` guardadas por la API."""
+    from mibici_mlops_module.registro_predicciones import RegistroPredicciones, ruta_registro
+
+    archivo, features = PREGUNTAS[pregunta]
+    actual = RegistroPredicciones(ruta or ruta_registro()).leer(pregunta=pregunta)
+    faltan = [c for c in features if c not in actual.columns]
+    if len(actual) < minimo or faltan:
+        raise ValueError(
+            f"El registro tiene {len(actual)} peticiones de {pregunta} (mínimo {minimo})"
+            + (f" y le faltan variables: {faltan}" if faltan and len(actual) else "")
+            + ". Activa REGISTRO_PREDICCIONES=1 en la API y genera tráfico (p. ej. con Locust)."
+        )
+    actual = actual[features].tail(muestra).reset_index(drop=True)
+    referencia, _ = cargar_conjuntos(archivo, features, muestra, processed_dir)
+    return referencia, actual.astype(referencia.dtypes.to_dict())
+
+
+def generar_reporte_produccion(
+    pregunta: str,
+    ruta: Path | None = None,
+    salida: Path = DRIFT_DIR,
+    muestra: int = MUESTRA,
+    minimo: int = 50,
+    processed_dir: Path = PROCESSED_DATA_DIR,
+) -> dict:
+    """Reporte de Evidently (drift + calidad) de entrenamiento vs. tráfico real de la API.
+
+    Guarda `drift_<pregunta>_produccion.html/.json` sin tocar los reportes contra junio.
+    """
+    from evidently import DataDefinition, Dataset, Report
+    from evidently.presets import DataDriftPreset, DataSummaryPreset
+
+    _, features = PREGUNTAS[pregunta]
+    ref, act = cargar_conjuntos_produccion(pregunta, ruta, muestra, minimo, processed_dir)
+    categoricas = [c for c in CATEGORICAS if c in features]
+    ref[categoricas] = ref[categoricas].astype(str)
+    act[categoricas] = act[categoricas].astype(str)
+    numericas = [c for c in features if c not in categoricas]
+    definicion = DataDefinition(numerical_columns=numericas, categorical_columns=categoricas)
+    evaluacion = Report([DataDriftPreset(), DataSummaryPreset()]).run(
+        current_data=Dataset.from_pandas(act, data_definition=definicion),
+        reference_data=Dataset.from_pandas(ref, data_definition=definicion),
+    )
+
+    salida.mkdir(parents=True, exist_ok=True)
+    html = salida / f"drift_{pregunta}_produccion.html"
+    evaluacion.save_html(str(html))
+    evaluacion.save_json(str(salida / f"drift_{pregunta}_produccion.json"))
+    logger.info(f"[{pregunta}] reporte de producción en {html}")
+    return {
+        "pregunta": pregunta,
+        "filas_referencia": len(ref),
+        "filas_actual": len(act),
+        "fuente_actual": "registro de la API",
+    }
+
+
 @app.command()
 def main(
     pregunta: str = typer.Option("todas", help="p1, p2 o todas"),

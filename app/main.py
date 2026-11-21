@@ -23,6 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from mibici_mlops_module.features import FEATURES_P1, FEATURES_P2
 from mibici_mlops_module.model_loader import cargar_modelo_registry
 import math
+import time
+from fastapi import Query
+from mibici_mlops_module.registro_predicciones import RegistroPredicciones
 
 PREGUNTAS_SERVIDAS = ("p1", "p2")
 
@@ -134,6 +137,11 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # noqa: BLE001 - se reporta en /health y como 503
             causa = exc.__cause__ or exc  # el loader envuelve el error real de MLflow
             logger.error(f"[{pregunta}] no se pudo cargar: {exc}. Causa: {causa}")
+    # Registro de predicciones (apagado por defecto; ver `registro_predicciones.py`)
+    app.state.registro = RegistroPredicciones.desde_entorno()
+    app.state.modelo_ref = f"version-{version}" if version else alias
+    if app.state.registro.activo:
+        logger.info(f"Registro de predicciones activo en {app.state.registro.ruta}")
     yield
 
 
@@ -168,12 +176,67 @@ def health():
 @app.post("/predict/p1", response_model=SalidaP1, tags=["predicción"])
 def predecir_demanda(datos: EntradaP1):
     """P1: salidas esperadas de la estación en la hora siguiente (regresión)."""
+    inicio = time.perf_counter()
     pred = _predecir("p1", datos, FEATURES_P1)
+    _registrar("p1", datos, max(float(pred), 0.0), inicio)
     return SalidaP1(pred_salidas_t1=max(float(pred), 0.0), modelo="p1")
 
 
 @app.post("/predict/p2", response_model=SalidaP2, tags=["predicción"])
 def predecir_riesgo(datos: EntradaP2):
     """P2: riesgo de la estación en la hora siguiente (clasificación)."""
+    inicio = time.perf_counter()
     pred = _predecir("p2", datos, FEATURES_P2)
+    _registrar("p2", datos, str(pred), inicio)
     return SalidaP2(pred_riesgo_t1=str(pred), modelo="p2")
+
+
+# ---------------------------------------------------------------------------
+# Monitoreo en producción: registro de predicciones y resumen del tráfico
+# ---------------------------------------------------------------------------
+def _registrar(pregunta: str, datos: BaseModel, prediccion, inicio: float) -> None:
+    """Guarda la predicción servida si el registro está activo. Nunca hace fallar la petición."""
+    registro = getattr(app.state, "registro", None)
+    if registro is None or not registro.activo:
+        return
+    try:
+        modelo = app.state.modelos.get(pregunta)
+        run_id = getattr(getattr(modelo, "metadata", None), "run_id", None)
+        registro.registrar(
+            pregunta,
+            datos.model_dump(),
+            prediccion,
+            modelo=getattr(app.state, "modelo_ref", None),
+            run_id=run_id if isinstance(run_id, str) else None,
+            latencia_ms=(time.perf_counter() - inicio) * 1000,
+        )
+    except Exception as exc:  # noqa: BLE001 - el registro no debe tumbar la inferencia
+        logger.warning(f"[{pregunta}] no se pudo registrar la predicción: {exc}")
+
+
+class ResumenPregunta(BaseModel):
+    peticiones: int
+    desde: str
+    hasta: str
+    modelos: list[str]
+    latencia_ms_p50: float | None = None
+    latencia_ms_p95: float | None = None
+    prediccion_media: float | None = Field(None, description="Solo P1 (regresión)")
+    prediccion_p95: float | None = Field(None, description="Solo P1 (regresión)")
+    distribucion_prediccion: dict[str, float] | None = Field(
+        None, description="Solo P2: proporción de cada clase"
+    )
+
+
+class ResumenMonitoreo(BaseModel):
+    activo: bool = Field(description="Si la API está guardando las predicciones")
+    peticiones: int
+    ventana: int | None = Field(description="Últimas peticiones consideradas")
+    por_pregunta: dict[str, ResumenPregunta]
+
+
+@app.get("/monitoreo/resumen", response_model=ResumenMonitoreo, tags=["monitoreo"])
+def monitoreo_resumen(ventana: int = Query(10_000, ge=1, le=1_000_000)):
+    """Resumen del tráfico registrado: peticiones, latencia p50/p95 y distribución de predicciones."""
+    registro = getattr(app.state, "registro", None) or RegistroPredicciones.desde_entorno()
+    return registro.resumen(ventana=ventana)

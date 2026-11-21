@@ -37,6 +37,12 @@ services:
       - "8000:8000"
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      # Registro de predicciones (apagado por defecto): REGISTRO_PREDICCIONES=1 docker compose up
+      - REGISTRO_PREDICCIONES=${REGISTRO_PREDICCIONES:-0}
+      - REGISTRO_PREDICCIONES_RUTA=/app/data/interim/predicciones_api.jsonl
+    volumes:
+      # El JSONL queda en data/interim/ del equipo para correr el drift sobre el tráfico real
+      - ./data/interim:/app/data/interim
     deploy:
       resources:
         limits:
