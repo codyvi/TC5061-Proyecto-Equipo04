@@ -115,6 +115,8 @@ Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecució
     │
     ├── monitoreo.py            <- Reporte de data drift con Evidently (referencia vs. actual)
     │
+    ├── registro_predicciones.py <- Registro de las predicciones de la API (JSONL) y su resumen
+    │
     ├── plots.py                <- Código para crear visualizaciones
     │
     └── utils.py                <- Utilidades compartidas (commit de Git para las etiquetas de MLflow)
@@ -369,6 +371,7 @@ Todos se ejecutan como módulo (`python -m ...`) y aceptan `--help`.
 | `mibici_mlops_module.modeling.train` | Solo entrena (un run por candidato) y guarda el mejor en `models/`. | `python -m mibici_mlops_module.modeling.train --pregunta p2` |
 | `mibici_mlops_module.modeling.predict` | Genera predicciones con el modelo guardado y las escribe en `data/processed/pX_predicciones.parquet`. | `python -m mibici_mlops_module.modeling.predict --pregunta p1 --conjunto prueba` |
 | `mibici_mlops_module.monitoreo` | Compara los datos de entrenamiento (ene-abr) contra junio con Evidently y genera `drift_p1` y `drift_p2` (`.html`, `.json` y `.png`) en `reports/drift/`. No requiere el servidor de MLflow. | `python -m mibici_mlops_module.monitoreo` |
+| `mibici_mlops_module.registro_predicciones` | Resume el tráfico que registró la API (`resumen`) y corre Evidently con ese tráfico como conjunto actual (`drift`), generando `drift_pX_produccion` en `reports/drift/`. Ver [Monitoreo en producción](#monitoreo-en-producción-registro-de-predicciones). | `python -m mibici_mlops_module.registro_predicciones drift --pregunta p1` |
 | `mibici_mlops_module.modeling.drift_desempeno` | Mide si el drift de las entradas explica el aumento del error del champion (P1 por tramos de `salidas_media_24h`; P2 con las métricas de mayo y junio). | `python -m mibici_mlops_module.modeling.drift_desempeno` |
 | `mibici_mlops_module.modeling.ab_testing` | Entrena y registra las alternativas de P1 (`challenger` y `challenger-hp`), las compara con el champion en junio y guarda el reporte. Con `--promover` mueve el alias si gana alguna. | `python -m mibici_mlops_module.modeling.ab_testing` |
 | `pytest` (carpeta `tests/`) | Pruebas unitarias, de reproducibilidad, de calidad de datos (DeepChecks) y de seguridad. Ver [Pruebas y chequeos de seguridad](#pruebas-y-chequeos-de-seguridad). | `python -m pytest -q` |
@@ -405,6 +408,7 @@ Para correr solo un grupo: `python -m pytest tests/test_deepchecks_datos.py -v`.
 | `test_deepchecks_datos.py` | Calidad de `data/processed/` con DeepChecks: tipos, nulos (`PercentOfNulls`, `MixedNulls`), duplicados, drift de variables y del objetivo entre entrenamiento y prueba, y particiones sin traslape. Cada chequeo se prueba también con datos sintéticos defectuosos. Se omite si aún no existen las tablas. |
 | `test_seguridad.py` | `.env` y llaves ignorados por Git, sin archivos de credenciales ni secretos en los archivos versionados ni en el historial, configuración leída del entorno y bandit sin hallazgos de severidad alta. |
 | `test_model_registry.py`, `test_data_validation.py`, `test_train_utils.py` | Model Registry y validaciones básicas del pipeline. |
+| `test_registro_predicciones.py` | Registro de predicciones: apagado por defecto, una línea por predicción servida (las entradas inválidas no se registran), líneas dañadas omitidas, resumen y `GET /monitoreo/resumen`, que una falla al escribir no tumbe la API, y el drift de Evidently con el tráfico registrado (modelos simulados, sin MLflow). |
 
 ### Seguridad
 
@@ -651,6 +655,25 @@ python -m mibici_mlops_module.modeling.drift_desempeno   # ¿el drift explica el
 - `salidas_media_24h` en P1 (0.108): apenas sobre el umbral; es la señal con más interés.
 - **El drift casi no explica el deterioro.** El MAE de P1 subió 9 % de mayo a junio, pero menos del 2 % de ese aumento viene del cambio en la entrada, y la mayor parte es escala: la demanda subió 7.6 % y el MAE relativo solo 1.3 %. P2 empeoró levemente, sobre todo en `saturacion` (recall de 0.702 a 0.664).
 
+### Monitoreo en producción: registro de predicciones
+
+El análisis anterior usa junio para *simular* producción porque la API no guardaba las peticiones. Con [`registro_predicciones.py`](mibici_mlops_module/registro_predicciones.py) la API puede guardar cada predicción que sirve, y con eso el mismo reporte de Evidently se corre contra el **tráfico real**.
+
+- **Activación.** Está apagado por defecto: sin la variable de entorno la API funciona igual que antes y no escribe nada. Se activa con `REGISTRO_PREDICCIONES=1`. La ruta se define con `REGISTRO_PREDICCIONES_RUTA` (por defecto `data/interim/predicciones_api.jsonl`, ya incluida en `.gitignore`).
+- **Qué se guarda.** Una línea JSON por predicción exitosa: `fecha_utc`, `pregunta`, `entradas` (las variables de `FEATURES_P1`/`FEATURES_P2`), `prediccion`, `modelo` (alias o versión del Registry), `run_id` y `latencia_ms`. Las peticiones rechazadas con 422 o 503 no se guardan. No hay datos de usuarios, porque las entradas están agregadas por estación y hora.
+- **Robustez.** La escritura usa un candado entre hilos y, si falla (por ejemplo, disco lleno o sin permisos), la predicción se responde de todos modos y solo queda un aviso en el log. Las líneas dañadas se omiten al leer.
+
+```bash
+REGISTRO_PREDICCIONES=1 uvicorn app.main:app --port 8000           # o: REGISTRO_PREDICCIONES=1 docker compose up
+curl localhost:8000/monitoreo/resumen                               # peticiones, latencia p50/p95 y predicciones
+python -m mibici_mlops_module.registro_predicciones resumen          # lo mismo desde la terminal
+python -m mibici_mlops_module.registro_predicciones drift --pregunta todas   # Evidently: entrenamiento vs. tráfico real
+```
+
+`GET /monitoreo/resumen` (parámetro `ventana`, por defecto las últimas 10,000 peticiones) devuelve, por pregunta, el número de peticiones, el periodo, los modelos que respondieron y la latencia p50/p95. Para P1 agrega la media y el p95 de la predicción; para P2, la proporción de cada clase. Un cambio brusco en la proporción de `vaciado` o `saturación` es una alerta temprana que se ve antes de conocer el resultado real.
+
+El comando `drift` usa la misma referencia (entrenamiento, muestra de 50,000 filas) y toma como conjunto actual las peticiones registradas (necesita al menos 50 por pregunta). Guarda `reports/drift/drift_pX_produccion.html` y `.json` sin tocar los reportes contra junio. En Docker Compose el archivo se monta en `./data/interim/`, así que el comando se puede correr desde el equipo local. Con el tráfico de [Locust](#pruebas-de-carga-con-locust), que repite una sola petición, el reporte marca drift en casi todas las variables. Es lo esperado: sirve para comprobar el flujo, no como medición.
+
 ## Versión alternativa y A/B testing
 
 Para P1 se registraron dos alternativas como nuevas versiones de `mibici-equipo04-p1-demanda`; cada una cambia **un solo factor** respecto al `champion`, para saber qué aporta cada cambio. Todas se evalúan sobre las mismas 279,312 filas de junio, que ninguna vio al entrenar.
@@ -836,6 +859,7 @@ Variables opcionales: `MODELO_ALIAS` (por defecto `champion`) y `MODELO_VERSION`
 | `GET /health` | — | `{"estado": "ok", "modelos_cargados": ["p1", "p2"]}` |
 | `POST /predict/p1` | `EntradaP1`: las 12 variables de `FEATURES_P1` | `{"pred_salidas_t1": 6.07, "modelo": "p1"}` |
 | `POST /predict/p2` | `EntradaP2`: las 18 variables de `FEATURES_P2` | `{"pred_riesgo_t1": "vaciado", "modelo": "p2"}` |
+| `GET /monitoreo/resumen` | `ventana` (opcional, por defecto 10,000) | Resumen del tráfico registrado; requiere `REGISTRO_PREDICCIONES=1` (ver [Monitoreo en producción](#monitoreo-en-producción-registro-de-predicciones)) |
 
 **Validación (Pydantic).** Cada campo tiene tipo y rango (`hora` 0–23, `dia_semana` 0–6, banderas solo 0/1, conteos ≥ 0, coordenadas dentro de Guadalajara, `capacidad` > 0). Faltantes, tipos incorrectos, valores fuera de rango y campos desconocidos devuelven `422` con el detalle, sin llegar al modelo. Una prueba verifica que los esquemas coincidan con `FEATURES_P1`/`FEATURES_P2`.
 
