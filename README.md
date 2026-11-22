@@ -302,6 +302,10 @@ Con `podman-compose` los comandos son los mismos. El Registry del volumen empiez
 
 1. **pruebas**: Python 3.12, instala `requirements.txt` y corre `python -m pytest -q`.
 2. **imagen** (solo si pasan las pruebas): valida `docker-compose.yml`, construye la imagen del [Containerfile](Containerfile) con Buildx y comprueba que la app se importa en el contenedor. En los *push* a `main` además publica la imagen en GitHub Container Registry (`ghcr.io/<owner>/mibici-api`, etiquetas `latest` y el SHA del commit); en los pull requests solo la construye.
+3. **despliegue** (solo si pasan las pruebas): levanta todo el sistema con `docker compose up -d --build`, espera a que la API responda y verifica `GET /health`; muestra los logs y limpia al terminar.
+4. **resumen** (siempre): publica una tabla con el resultado de cada etapa en el resumen de la ejecución y, si alguna falló, termina en error para que GitHub notifique por correo a quien hizo el push.
+
+Para impedir el *merge* mientras el CI no pase, usa un *ruleset* con *Require status checks to pass* y los checks `Pruebas (pytest)`, `Construir imagen y validar compose` y `Resumen y notificación`.
 
 Local: `python -m pytest -q` y `docker build -t mibici-api -f Containerfile .`.
 
@@ -354,6 +358,16 @@ Medido con `docker stats` cada 5 s: CPU ~0.2 % en reposo, **~112 % de un núcleo
 Con la configuración medida (t3.medium on-demand) cada inferencia cuesta **≈ 0.0000012 USD (1.24 USD por millón)**; como solo se usan ~400 MiB, una t3.small basta y lo reduce a ≈ 0.62. El costo por inferencia depende sobre todo de la **utilización**: a 10 % cuesta 10× más que al 100 %.
 
 ![Costo vs utilización](reports/finops/costo_vs_utilizacion.png)
+
+**Escalabilidad (con la capacidad estimada de ~12 req/s por instancia de 2 vCPU):**
+
+| Demanda | Instancias | USD/mes (t3.small on-demand) | USD/mes (t3.small Spot) |
+| --- | --- | --- | --- |
+| 10 req/s | 1 | 15.18 | 5.31 |
+| 50 req/s | 5 | 75.90 | 26.55 |
+| 100 req/s | 9 | 136.62 | 47.79 |
+
+El costo crece de forma lineal con la demanda (y el costo por inferencia se mantiene) siempre que se escale horizontalmente y las réplicas estén bien utilizadas.
 
 **Cómo optimizarlo:** dimensionar por CPU (t3.small); reducir la CPU por petición (limitar hilos con `n_jobs`/`OMP_NUM_THREADS`, modelos más pequeños si el MAE casi no cambia, varias estaciones por petición); caché de predicciones por (estación, hora) con Redis y TTL de 1 h; reservada para la carga base y Spot para réplicas extra; autoescalado por CPU o serverless si la utilización es baja; precalcular la demanda cada hora con un job; límites de recursos por contenedor (ya definidos en compose).
 
