@@ -25,6 +25,19 @@ Los datos solo registran viajes, no el inventario real de bicicletas; por eso la
 
 Para reproducir todo desde cero, ve a [Ejecución de principio a fin](#ejecución-de-principio-a-fin).
 
+## Resumen de entregables
+
+| Componente | Dónde está |
+| --- | --- |
+| Estructura (Cookiecutter) y feature engineering | [Organización del proyecto](#organización-del-proyecto), `mibici_mlops_module/features.py` |
+| Código refactorizado como MLflow Project y seguimiento (Tracking) | [MLflow Project](#mlflow-project), [MLproject](MLproject), experimento `mibici-equipo04` |
+| Mejor modelo en el Model Registry (versiones, alias, linaje) | [Model Registry y gestión de modelos en producción](#model-registry-y-gestión-de-modelos-en-producción), [Model Card](docs/docs/model-card.md) |
+| API FastAPI contenerizada y Docker Compose | [Empaquetado y despliegue con Docker](#empaquetado-y-despliegue-con-docker), [docker-compose.yml](docker-compose.yml) |
+| CI/CD con GitHub Actions | [.github/workflows/ci.yml](.github/workflows/ci.yml), [Pipeline de CI](#pipeline-de-ci-github-actions) |
+| Pruebas de carga (Locust), recursos y FinOps | [Resultados de la prueba de carga](#resultados-de-la-prueba-de-carga), [Análisis FinOps](#análisis-finops) |
+| Monitoreo de drift (Evidently) y A/B testing | [Monitoreo de data drift](#monitoreo-de-data-drift), [Versión alternativa y A/B testing](#versión-alternativa-y-ab-testing) |
+| Model Card | [docs/docs/model-card.md](docs/docs/model-card.md) |
+
 ## Integrantes y roles
 
 | Integrante | Matrícula | Rol | Aportes |

@@ -59,6 +59,19 @@ Se utiliza el alias `champion` para identificar la versión seleccionada de cada
 
 Las versiones alternativas pueden evaluarse antes de promoverlas a producción.
 
+Linaje de las versiones `champion` (leído del Registry local):
+
+| Modelo | Versión | Alias | Run de origen (MLflow) | Datos (`data_version`) | Commit de entrenamiento |
+| --- | ---: | --- | --- | --- | --- |
+| mibici-equipo04-p1-demanda | 1 | champion | `a1550dbf3a43…` (P1-demanda-hist-gradient-boosting-poisson-base) | bd6802fef84e | f15d3d9 |
+| mibici-equipo04-p2-riesgo | 1 | champion | `bc637dfb3c36…` (P2-riesgo-random-forest-class-weight-bosque-grande) | bd6802fef84e | f15d3d9 |
+| mibici-equipo04-p3-grupos | 1 | champion | `663be4b0a02f…` (P3-tipologia-kmeans-k3) | bd6802fef84e | f15d3d9 |
+
+Entrenamiento con semilla 42; P1 usa datos de 2026-01-08 a 2026-04-30 (999,024 filas), validación en mayo y prueba en junio de 2026. Las versiones `challenger` (v2) y `challenger-hp` (v3) de P1 están registradas pero no están en producción.
+
+**Estado de producción:** el alias `champion` define qué versión sirve la API (variable `MODELO_ALIAS`); no se usan las etapas (*stages*) obsoletas de MLflow. Hoy las tres versiones 1 son `champion`; P3 no se expone en la API.
+
+
 ## 4. Evaluación A/B del modelo P1
 
 Se evaluaron tres versiones sobre 279,312 observaciones de junio de 2026.
